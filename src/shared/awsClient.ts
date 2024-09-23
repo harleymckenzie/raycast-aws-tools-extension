@@ -3,7 +3,7 @@
 import { PricingClient } from "@aws-sdk/client-pricing";
 import { EC2Client, DescribeInstanceTypesCommand } from "@aws-sdk/client-ec2";
 import { fromIni } from "@aws-sdk/credential-providers";
-import { getPreferenceValues } from "@raycast/api";
+import { getPreferenceValues, LocalStorage } from "@raycast/api";
 
 interface Preferences {
   awsProfile: string;
@@ -38,14 +38,37 @@ function chunkArray<T>(array: T[], chunkSize: number): T[][] {
 }
 
 // New function to fetch baseline bandwidths
+const BASELINE_BANDWIDTH_CACHE_KEY = "baseline_bandwidth_data";
+
 export async function fetchBaselineBandwidth(
   nodeTypes: string[],
   region: string
 ): Promise<Record<string, string>> {
-  const ec2Client = createEC2Client(region);
-  const ec2InstanceTypes = nodeTypes.map((type) => type.replace("cache.", ""));
+  const cachedData = await getCachedData<Record<string, string>>(BASELINE_BANDWIDTH_CACHE_KEY);
+  if (cachedData) {
+    return cachedData;
+  }
 
-  const chunks = chunkArray(ec2InstanceTypes, 100); // Chunk into batches of 100
+  const ec2Client = createEC2Client(region);
+  const ec2InstanceTypes = nodeTypes.map((type) => type.replace("cache.", "").replace("db.", ""));
+
+  const validInstanceTypes: string[] = [];
+  const invalidInstanceTypes: string[] = [];
+
+  // Validate instance types
+  for (const instanceType of ec2InstanceTypes) {
+    try {
+      const command = new DescribeInstanceTypesCommand({
+        InstanceTypes: [instanceType],
+      });
+      await ec2Client.send(command);
+      validInstanceTypes.push(instanceType);
+    } catch (error) {
+      invalidInstanceTypes.push(instanceType);
+    }
+  }
+
+  const chunks = chunkArray(validInstanceTypes, 100); // Chunk into batches of 100
 
   const baselineBandwidths: Record<string, string> = {};
 
@@ -62,9 +85,9 @@ export async function fetchBaselineBandwidth(
           const instanceType = instanceTypeInfo.InstanceType;
           const baselineBandwidth =
             instanceTypeInfo.NetworkInfo?.NetworkCards?.[0]?.BaselineBandwidthInGbps;
-          baselineBandwidths[instanceType] = baselineBandwidth
-            ? `${baselineBandwidth} Gbps`
-            : "Unknown";
+          if (baselineBandwidth) {
+            baselineBandwidths[instanceType] = `${baselineBandwidth} Gbps`;
+          }
         }
       }
     } catch (error) {
@@ -75,5 +98,30 @@ export async function fetchBaselineBandwidth(
   // Wait for all promises to resolve
   await Promise.all(promises);
 
+  // Cache the fetched data
+  await setCachedData(BASELINE_BANDWIDTH_CACHE_KEY, baselineBandwidths);
+
   return baselineBandwidths;
+}
+
+// Caching functions
+async function getCachedData<T>(key: string): Promise<T | null> {
+  try {
+    const cachedDataString = await LocalStorage.getItem<string>(key);
+    if (cachedDataString) {
+      const cachedData = JSON.parse(cachedDataString);
+      return cachedData as T;
+    }
+  } catch (error) {
+    console.error("Error getting cached data:", error);
+  }
+  return null;
+}
+
+async function setCachedData<T>(key: string, data: T): Promise<void> {
+  try {
+    await LocalStorage.setItem(key, JSON.stringify(data));
+  } catch (error) {
+    console.error("Error setting cached data:", error);
+  }
 }

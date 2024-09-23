@@ -25,7 +25,7 @@ interface NodeDetails {
   networkPerformance: string;
   vcpu: string;
   nodeType: string;
-  baselineBandwidth: string;
+  baselineBandwidth?: string; // Updated to optional
 }
 
 interface CommandArguments {
@@ -34,7 +34,6 @@ interface CommandArguments {
 }
 
 const CACHE_KEY = "elasticache_node_data";
-const CACHE_VERSION = 1; // Update when making breaking changes
 
 export default function Command(props: LaunchProps<{ arguments: CommandArguments }>) {
   const { defaultRegion } = getPreferenceValues<Preferences>();
@@ -50,13 +49,13 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
       setIsLoading(true);
       try {
         const cacheKeyWithRegion = `${CACHE_KEY}_${region}`;
-        const cachedData = await getCachedData<Record<string, NodeDetails>>(cacheKeyWithRegion, CACHE_VERSION);
+        const cachedData = await getCachedData<Record<string, NodeDetails>>(cacheKeyWithRegion);
         if (cachedData) {
           setNodeData(cachedData);
         } else {
           const data = await fetchNodeData(region);
           setNodeData(data);
-          await setCachedData(cacheKeyWithRegion, CACHE_VERSION, data);
+          await setCachedData(cacheKeyWithRegion, data);
         }
       } catch (error) {
         console.error("Error in fetchData:", error);
@@ -135,17 +134,17 @@ function NodeDetailsComponent({
   const dailyCost = hourlyCost * 24;
   const monthlyCost = hourlyCost * 730; // More accurate monthly estimation
 
+  const networkThroughput = baselineBandwidth
+    ? `${networkPerformance} | Baseline: ${baselineBandwidth}`
+    : networkPerformance;
+
   return (
     <List navigationTitle={`Details for ${nodeType}`}>
       <List.Section title="Node Details">
         <List.Item icon={Icon.Monitor} title="Node Type" accessories={[{ text: nodeType }]} />
         <List.Item icon={Icon.MemoryChip} title="vCPU" accessories={[{ text: `${vcpu} vCPU` }]} />
         <List.Item icon={Icon.MemoryStick} title="Memory" accessories={[{ text: memory }]} />
-        <List.Item
-          icon={Icon.Network}
-          title="Network Performance"
-          accessories={[{ text: `${networkPerformance} | Baseline: ${baselineBandwidth}` }]}
-        />
+        <List.Item icon={Icon.Network} title="Network Performance" accessories={[{ text: networkThroughput }]} />
       </List.Section>
       <List.Section title={`Pricing (${region})`}>
         <List.Item
@@ -222,7 +221,11 @@ async function fetchNodeData(region: string): Promise<Record<string, NodeDetails
     const baselineBandwidths = await fetchBaselineBandwidth(nodeTypes, region);
     for (const nodeType of nodeTypes) {
       const ec2InstanceType = nodeType.replace("cache.", "");
-      nodeData[nodeType].baselineBandwidth = baselineBandwidths[ec2InstanceType] || "Unknown";
+      if (baselineBandwidths[ec2InstanceType]) {
+        nodeData[nodeType].baselineBandwidth = baselineBandwidths[ec2InstanceType];
+      } else {
+        delete nodeData[nodeType].baselineBandwidth;
+      }
     }
 
     return nodeData;
@@ -233,14 +236,12 @@ async function fetchNodeData(region: string): Promise<Record<string, NodeDetails
 }
 
 // Caching functions
-async function getCachedData<T>(key: string, version: number): Promise<T | null> {
+async function getCachedData<T>(key: string): Promise<T | null> {
   try {
     const cachedDataString = await LocalStorage.getItem<string>(key);
     if (cachedDataString) {
       const cachedData = JSON.parse(cachedDataString);
-      if (cachedData.version === version) {
-        return cachedData.data as T;
-      }
+      return cachedData as T;
     }
   } catch (error) {
     console.error("Error getting cached data:", error);
@@ -248,13 +249,9 @@ async function getCachedData<T>(key: string, version: number): Promise<T | null>
   return null;
 }
 
-async function setCachedData<T>(key: string, version: number, data: T): Promise<void> {
+async function setCachedData<T>(key: string, data: T): Promise<void> {
   try {
-    const dataToCache = {
-      version,
-      data,
-    };
-    await LocalStorage.setItem(key, JSON.stringify(dataToCache));
+    await LocalStorage.setItem(key, JSON.stringify(data));
   } catch (error) {
     console.error("Error setting cached data:", error);
   }

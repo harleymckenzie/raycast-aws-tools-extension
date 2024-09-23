@@ -10,7 +10,7 @@ import {
   LocalStorage,
 } from "@raycast/api";
 import { useEffect, useState } from "react";
-import { createPricingClient } from "./shared/awsClient";
+import { createPricingClient, fetchBaselineBandwidth } from "./shared/awsClient";
 import { GetProductsCommand } from "@aws-sdk/client-pricing";
 
 interface Preferences {
@@ -24,6 +24,7 @@ interface InstanceDetails {
   processorType: string; // Updated to processorType
   storage: string;
   networkPerformance: string;
+  baselineBandwidth?: string; // Updated to optional
 }
 
 interface CommandArguments {
@@ -32,7 +33,6 @@ interface CommandArguments {
 }
 
 const CACHE_KEY = "ec2_instance_data";
-const CACHE_VERSION = 1; // Update when making breaking changes
 
 export default function Command(props: LaunchProps<{ arguments: CommandArguments }>) {
   const { defaultRegion } = getPreferenceValues<Preferences>();
@@ -48,13 +48,13 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
       setIsLoading(true);
       try {
         const cacheKeyWithRegion = `${CACHE_KEY}_${region}`;
-        const cachedData = await getCachedData<Record<string, InstanceDetails>>(cacheKeyWithRegion, CACHE_VERSION);
+        const cachedData = await getCachedData<Record<string, InstanceDetails>>(cacheKeyWithRegion);
         if (cachedData) {
           setInstanceData(cachedData);
         } else {
           const data = await fetchInstanceData(region);
           setInstanceData(data);
-          await setCachedData(cacheKeyWithRegion, CACHE_VERSION, data);
+          await setCachedData(cacheKeyWithRegion, data);
         }
       } catch (error) {
         console.error("Error in fetchData:", error);
@@ -120,28 +120,30 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
 }
 
 function InstanceDetailsComponent({
-  instanceType,
   details,
   region,
 }: {
-  instanceType: string;
   details: InstanceDetails;
   region: string;
 }) {
-  const { pricePerHour, memory, vcpu, storage, networkPerformance, processorType } = details;
+  const { pricePerHour, memory, vcpu, processorType, storage, networkPerformance, baselineBandwidth } = details;
   const hourlyCost = pricePerHour ?? 0;
   const dailyCost = hourlyCost * 24;
   const monthlyCost = dailyCost * 30;
 
+  const networkThroughput = baselineBandwidth
+    ? `${networkPerformance} | Baseline: ${baselineBandwidth}`
+    : networkPerformance;
+
   return (
-    <List navigationTitle={`Details for ${instanceType}`}>
+    <List navigationTitle={`Details for ${details.instanceType}`}>
       <List.Section title="Instance Details">
-        <List.Item icon={Icon.Monitor} title="Instance Type" accessories={[{ text: instanceType }]} />
+        <List.Item icon={Icon.Monitor} title="Instance Type" accessories={[{ text: details.instanceType }]} />
         <List.Item icon={Icon.MemoryChip} title="vCPU" accessories={[{ text: `${vcpu} vCPU` }]} />
         <List.Item icon={Icon.MemoryChip} title="Processor Type" accessories={[{ text: processorType }]} />
         <List.Item icon={Icon.MemoryStick} title="Memory" accessories={[{ text: memory }]} />
         <List.Item icon={Icon.HardDrive} title="Storage" accessories={[{ text: storage }]} />
-        <List.Item icon={Icon.Network} title="Network Performance" accessories={[{ text: networkPerformance }]} />
+        <List.Item icon={Icon.Network} title="Network Performance" accessories={[{ text: networkThroughput }]} />
       </List.Section>
       <List.Section title={`Pricing (${region})`}>
         <List.Item
@@ -207,6 +209,7 @@ async function fetchInstanceData(region: string): Promise<Record<string, Instanc
               memory: attributes.memory,
               storage: attributes.storage,
               networkPerformance: attributes.networkPerformance,
+              baselineBandwidth: "Fetching...", // Placeholder
             };
           }
         }
@@ -217,6 +220,22 @@ async function fetchInstanceData(region: string): Promise<Record<string, Instanc
       command.input.NextToken = nextToken;
     }
 
+    // Extract instance types from instanceData
+    const instanceTypes = Object.keys(instanceData);
+
+    // Fetch baseline bandwidths in parallel
+    const baselineBandwidths = await fetchBaselineBandwidth(instanceTypes, region);
+    for (const instanceType of instanceTypes) {
+      // If EC2 instance types have prefixes, adjust here (e.g., no prefix assumed)
+      const ec2InstanceType = instanceType; // Modify if necessary
+
+      if (baselineBandwidths[ec2InstanceType]) {
+        instanceData[instanceType].baselineBandwidth = baselineBandwidths[ec2InstanceType];
+      } else {
+        delete instanceData[instanceType].baselineBandwidth;
+      }
+    }
+
     return instanceData;
   } catch (error) {
     console.error("Error fetching instance data:", error);
@@ -225,14 +244,12 @@ async function fetchInstanceData(region: string): Promise<Record<string, Instanc
 }
 
 // Caching functions
-async function getCachedData<T>(key: string, version: number): Promise<T | null> {
+async function getCachedData<T>(key: string): Promise<T | null> {
   try {
     const cachedDataString = await LocalStorage.getItem<string>(key);
     if (cachedDataString) {
       const cachedData = JSON.parse(cachedDataString);
-      if (cachedData.version === version) {
-        return cachedData.data as T;
-      }
+      return cachedData as T;
     }
   } catch (error) {
     console.error("Error getting cached data:", error);
@@ -240,13 +257,9 @@ async function getCachedData<T>(key: string, version: number): Promise<T | null>
   return null;
 }
 
-async function setCachedData<T>(key: string, version: number, data: T): Promise<void> {
+async function setCachedData<T>(key: string, data: T): Promise<void> {
   try {
-    const dataToCache = {
-      version,
-      data,
-    };
-    await LocalStorage.setItem(key, JSON.stringify(dataToCache));
+    await LocalStorage.setItem(key, JSON.stringify(data));
   } catch (error) {
     console.error("Error setting cached data:", error);
   }
