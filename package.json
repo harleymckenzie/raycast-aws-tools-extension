@@ -1,0 +1,114 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "aws-tools",
+  "title": "AWS Tools",
+  "description": "A collection of tools to manage AWS resources directly from Raycast.",
+  "icon": "AWS.png",
+  "author": "harleymckenzie",
+  "categories": [
+    "Developer Tools",
+    "Productivity",
+    "Finance"
+  ],
+  "license": "MIT",
+  "commands": [
+    {
+      "name": "search-ec2-instance",
+      "title": "Search EC2 Instance Types",
+      "description": "Finds and returns details and running costs for the provided EC2 instance type.",
+      "mode": "view",
+      "arguments": [
+        {
+          "name": "instanceType",
+          "type": "text",
+          "placeholder": "Instance Type",
+          "required": false
+        },
+        {
+          "name": "region",
+          "type": "text",
+          "placeholder": "AWS Region",
+          "required": false
+        }
+      ],
+      "icon": "EC2.png"
+    },
+    {
+      "name": "search-rds-instance",
+      "title": "Search RDS Instance Types",
+      "description": "Finds and returns details and running costs for the provided RDS instance type.",
+      "mode": "view",
+      "arguments": [
+        {
+          "name": "instanceType",
+          "type": "text",
+          "placeholder": "Instance Type",
+          "required": false
+        },
+        {
+          "name": "databaseEngine",
+          "type": "dropdown",
+          "data": [
+            { "title": "Aurora MySQL", "value": "Aurora MySQL" },
+            { "title": "Aurora PostgreSQL", "value": "Aurora PostgreSQL" },
+            { "title": "MySQL", "value": "MySQL" },
+            { "title": "PostgreSQL", "value": "PostgreSQL" },
+            { "title": "MariaDB", "value": "MariaDB" },
+            { "title": "Oracle", "value": "Oracle" },
+            { "title": "SQL Server", "value": "SQL Server" }
+          ],
+          "placeholder": "Database Engine",
+          "required": true,
+          "default": "Aurora MySQL"
+        },
+        {
+          "name": "region",
+          "type": "text",
+          "placeholder": "AWS Region",
+          "required": false
+        }
+      ],
+      "icon": "RDS.png"
+    }
+  ],
+  "preferences": [
+    {
+      "name": "awsProfile",
+      "type": "textfield",
+      "required": true,
+      "default": "default",
+      "title": "AWS Profile",
+      "description": "The AWS profile to use to fetch instance data."
+    },
+    {
+      "name": "defaultRegion",
+      "type": "textfield",
+      "required": true,
+      "default": "us-east-1",
+      "title": "AWS Region",
+      "description": "The default AWS region to use."
+    }
+  ],
+  "dependencies": {
+    "@aws-sdk/client-pricing": "^3.654.0",
+    "@aws-sdk/credential-providers": "^3.654.0",
+    "@raycast/api": "^1.83.1",
+    "@raycast/utils": "^1.17.0"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^1.0.11",
+    "@types/node": "20.8.10",
+    "@types/react": "18.3.3",
+    "eslint": "^8.57.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.4.5"
+  },
+  "scripts": {
+    "build": "ray build --skip-types -e dist -o dist",
+    "dev": "ray develop",
+    "fix-lint": "ray lint --fix",
+    "lint": "ray lint",
+    "prepublishOnly": "echo \"\\n\\nIt seems like you are trying to publish the Raycast extension to npm.\\n\\nIf you did intend to publish it to npm, remove the \\`prepublishOnly\\` script and rerun \\`npm publish\\` again.\\nIf you wanted to publish it to the Raycast Store instead, use \\`npm run publish\\` instead.\\n\\n\" && exit 1",
+    "publish": "npx @raycast/api@latest publish"
+  }
+}
