@@ -1,3 +1,5 @@
+// search-elasticache-instance.tsx
+
 import {
   List,
   LaunchProps,
@@ -9,37 +11,37 @@ import {
   Action,
   LocalStorage,
 } from "@raycast/api";
-import { useEffect, useState } from "react";
-import { createPricingClient } from "./shared/awsClient";
-import { GetProductsCommand } from "@aws-sdk/client-pricing";
+import { useEffect, useState, useMemo } from "react";
+import { createPricingClient, fetchBaselineBandwidth } from "./shared/awsClient";
+import { paginateGetProducts } from "@aws-sdk/client-pricing";
 
 interface Preferences {
   defaultRegion: string;
 }
 
-interface InstanceDetails {
+interface NodeDetails {
   pricePerHour: number | null;
   memory: string;
-  vcpu: string;
-  processorType: string; // Updated to processorType
-  storage: string;
   networkPerformance: string;
+  vcpu: string;
+  nodeType: string;
+  baselineBandwidth: string;
 }
 
 interface CommandArguments {
-  instanceType?: string;
+  nodeType?: string;
   region?: string;
 }
 
-const CACHE_KEY = "ec2_instance_data";
+const CACHE_KEY = "elasticache_node_data";
 const CACHE_VERSION = 1; // Update when making breaking changes
 
 export default function Command(props: LaunchProps<{ arguments: CommandArguments }>) {
   const { defaultRegion } = getPreferenceValues<Preferences>();
-  const [instanceData, setInstanceData] = useState<Record<string, InstanceDetails>>({});
+  const [nodeData, setNodeData] = useState<Record<string, NodeDetails>>({});
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [searchText, setSearchText] = useState(props.arguments.instanceType || "");
+  const [searchText, setSearchText] = useState(props.arguments.nodeType || "");
 
   const region = props.arguments.region || defaultRegion;
 
@@ -48,19 +50,19 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
       setIsLoading(true);
       try {
         const cacheKeyWithRegion = `${CACHE_KEY}_${region}`;
-        const cachedData = await getCachedData<Record<string, InstanceDetails>>(cacheKeyWithRegion, CACHE_VERSION);
+        const cachedData = await getCachedData<Record<string, NodeDetails>>(cacheKeyWithRegion, CACHE_VERSION);
         if (cachedData) {
-          setInstanceData(cachedData);
+          setNodeData(cachedData);
         } else {
-          const data = await fetchInstanceData(region);
-          setInstanceData(data);
+          const data = await fetchNodeData(region);
+          setNodeData(data);
           await setCachedData(cacheKeyWithRegion, CACHE_VERSION, data);
         }
       } catch (error) {
         console.error("Error in fetchData:", error);
         const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
         setError(errorMessage);
-        showToast({
+        await showToast({
           style: Toast.Style.Failure,
           title: "Error",
           message: errorMessage,
@@ -73,40 +75,40 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
     fetchData();
   }, [region]);
 
-  const filteredInstances = Object.entries(instanceData)
-    .filter(([type]) => type.toLowerCase().includes(searchText.toLowerCase()))
-    .sort(([a], [b]) => a.localeCompare(b));
+  const filteredNodes = useMemo(() => {
+    return Object.entries(nodeData)
+      .filter(([type]) => type.toLowerCase().includes(searchText.toLowerCase()))
+      .sort(([a], [b]) => a.localeCompare(b));
+  }, [nodeData, searchText]);
 
   return (
     <List
       isLoading={isLoading}
       onSearchTextChange={setSearchText}
-      searchBarPlaceholder="Search EC2 instance types..."
+      searchBarPlaceholder="Search ElastiCache Redis node types..."
       searchText={searchText}
     >
       {error ? (
         <List.Item title="Error" subtitle={error} icon={Icon.ExclamationMark} />
       ) : (
-        filteredInstances.map(([instanceType, info]) => (
+        filteredNodes.map(([nodeType, info]) => (
           <List.Item
-            key={instanceType}
-            title={instanceType}
-            subtitle={`${info.vcpu} vCPU | ${info.memory} RAM`}
-            icon={Icon.ComputerChip}
+            key={nodeType}
+            title={nodeType}
+            subtitle={`${info.vcpu} vCPU | ${info.memory} Memory`}
+            icon={Icon.MemoryChip}
             accessories={
-              info.pricePerHour !== null
-                ? [{ text: `$${info.pricePerHour.toFixed(4)}/hr` }]
-                : [{ text: "Price N/A" }]
+              info.pricePerHour !== null ? [{ text: `$${info.pricePerHour.toFixed(4)}/hr` }] : [{ text: "Price N/A" }]
             }
             actions={
               <ActionPanel>
                 <Action.Push
                   title="View Details"
                   target={
-                    <InstanceDetailsComponent
-                      instanceType={instanceType}
+                    <NodeDetailsComponent
+                      nodeType={nodeType}
                       details={info}
-                      region={region}  // Pass region as a prop
+                      region={region} // Pass region as a prop
                     />
                   }
                 />
@@ -119,29 +121,31 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
   );
 }
 
-function InstanceDetailsComponent({
-  instanceType,
+function NodeDetailsComponent({
+  nodeType,
   details,
   region,
 }: {
-  instanceType: string;
-  details: InstanceDetails;
+  nodeType: string;
+  details: NodeDetails;
   region: string;
 }) {
-  const { pricePerHour, memory, vcpu, storage, networkPerformance, processorType } = details;
+  const { pricePerHour, memory, networkPerformance, vcpu, baselineBandwidth } = details;
   const hourlyCost = pricePerHour ?? 0;
   const dailyCost = hourlyCost * 24;
-  const monthlyCost = dailyCost * 30;
+  const monthlyCost = hourlyCost * 730; // More accurate monthly estimation
 
   return (
-    <List navigationTitle={`Details for ${instanceType}`}>
-      <List.Section title="Instance Details">
-        <List.Item icon={Icon.Monitor} title="Instance Type" accessories={[{ text: instanceType }]} />
+    <List navigationTitle={`Details for ${nodeType}`}>
+      <List.Section title="Node Details">
+        <List.Item icon={Icon.Monitor} title="Node Type" accessories={[{ text: nodeType }]} />
         <List.Item icon={Icon.MemoryChip} title="vCPU" accessories={[{ text: `${vcpu} vCPU` }]} />
-        <List.Item icon={Icon.MemoryChip} title="Processor Type" accessories={[{ text: processorType }]} />
         <List.Item icon={Icon.MemoryStick} title="Memory" accessories={[{ text: memory }]} />
-        <List.Item icon={Icon.HardDrive} title="Storage" accessories={[{ text: storage }]} />
-        <List.Item icon={Icon.Network} title="Network Performance" accessories={[{ text: networkPerformance }]} />
+        <List.Item
+          icon={Icon.Network}
+          title="Network Performance"
+          accessories={[{ text: `${networkPerformance} | Baseline: ${baselineBandwidth}` }]}
+        />
       </List.Section>
       <List.Section title={`Pricing (${region})`}>
         <List.Item
@@ -158,68 +162,72 @@ function InstanceDetailsComponent({
   );
 }
 
-// Fetch Instance Data function
-async function fetchInstanceData(region: string): Promise<Record<string, InstanceDetails>> {
+// Fetch Node Data function
+async function fetchNodeData(region: string): Promise<Record<string, NodeDetails>> {
   const client = createPricingClient();
 
+  const paginatorConfig = {
+    client,
+    pageSize: 100,
+  };
+
+  const input = {
+    ServiceCode: "AmazonElastiCache",
+    Filters: [
+      { Type: "TERM_MATCH", Field: "cacheEngine", Value: "Redis" },
+      { Type: "TERM_MATCH", Field: "regionCode", Value: region },
+      { Type: "TERM_MATCH", Field: "productFamily", Value: "Cache Instance" },
+    ],
+  };
+
+  const paginator = paginateGetProducts(paginatorConfig, input);
+
+  const nodeData: Record<string, NodeDetails> = {};
+
   try {
-    const command = new GetProductsCommand({
-      ServiceCode: "AmazonEC2",
-      Filters: [
-        { Type: "TERM_MATCH", Field: "operatingSystem", Value: "Linux" },
-        { Type: "TERM_MATCH", Field: "regionCode", Value: region },
-        { Type: "TERM_MATCH", Field: "preInstalledSw", Value: "NA" },
-        { Type: "TERM_MATCH", Field: "capacitystatus", Value: "Used" },
-        { Type: "TERM_MATCH", Field: "tenancy", Value: "Shared" },
-      ],
-      MaxResults: 100,
-    });
-
-    const instanceData: Record<string, InstanceDetails> = {};
-    let hasNext = true;
-    let nextToken: string | undefined;
-
-    while (hasNext) {
-      const response = await client.send(command);
-      if (response.PriceList) {
-        for (const priceItem of response.PriceList) {
+    for await (const page of paginator) {
+      if (page.PriceList) {
+        for (const priceItem of page.PriceList) {
           const priceJSON = JSON.parse(priceItem);
           const product = priceJSON.product;
           const attributes = product.attributes;
-          const instanceType = attributes.instanceType;
+          const nodeType = attributes.instanceType;
 
-          if (!instanceType) continue;
+          if (!nodeType) continue;
 
           const onDemandTerms = priceJSON.terms?.OnDemand;
           if (onDemandTerms) {
             const term = Object.values(onDemandTerms)[0];
             const priceDimensions = term.priceDimensions;
             const priceDimension = Object.values(priceDimensions)[0];
-            const pricePerUnit = parseFloat(priceDimension.pricePerUnit.USD);
+            const pricePerUnit = parseFloat(priceDimension?.pricePerUnit?.USD ?? "0");
 
-            // Use physicalProcessor attribute to get the processor type
-            const processorType = attributes.physicalProcessor || "Unknown";
-
-            instanceData[instanceType] = {
+            nodeData[nodeType] = {
               pricePerHour: pricePerUnit,
               vcpu: attributes.vcpu,
-              processorType,
               memory: attributes.memory,
-              storage: attributes.storage,
               networkPerformance: attributes.networkPerformance,
+              nodeType,
+              baselineBandwidth: "Fetching...", // Placeholder
             };
           }
         }
       }
-
-      nextToken = response.NextToken;
-      hasNext = !!nextToken;
-      command.input.NextToken = nextToken;
     }
 
-    return instanceData;
+    // Extract node types from nodeData
+    const nodeTypes = Object.keys(nodeData);
+
+    // Fetch baseline bandwidths in parallel
+    const baselineBandwidths = await fetchBaselineBandwidth(nodeTypes, region);
+    for (const nodeType of nodeTypes) {
+      const ec2InstanceType = nodeType.replace("cache.", "");
+      nodeData[nodeType].baselineBandwidth = baselineBandwidths[ec2InstanceType] || "Unknown";
+    }
+
+    return nodeData;
   } catch (error) {
-    console.error("Error fetching instance data:", error);
+    console.error("Error fetching node data:", error);
     throw error;
   }
 }

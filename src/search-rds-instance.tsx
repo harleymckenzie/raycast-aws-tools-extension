@@ -108,7 +108,15 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
             }
             actions={
               <ActionPanel>
-                <Action.Push title="View Details" target={<DatabaseDetailsComponent details={info} />} />
+                <Action.Push
+                  title="View Details"
+                  target={
+                    <DatabaseDetailsComponent
+                      details={info}
+                      region={region}  // Pass region as a prop
+                    />
+                  }
+                />
               </ActionPanel>
             }
           />
@@ -118,7 +126,13 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
   );
 }
 
-function DatabaseDetailsComponent({ details }: { details: DatabaseDetails }) {
+function DatabaseDetailsComponent({
+  details,
+  region,
+}: {
+  details: DatabaseDetails;
+  region: string;
+}) {
   const { pricePerHour, engine, deploymentOption, instanceType, vcpu, memory, storage, processorType } = details;
   const hourlyCost = pricePerHour ?? 0;
   const dailyCost = hourlyCost * 24;
@@ -134,7 +148,7 @@ function DatabaseDetailsComponent({ details }: { details: DatabaseDetails }) {
         <List.Item icon={Icon.MemoryStick} title="Memory" accessories={[{ text: memory }]} />
         <List.Item icon={Icon.HardDrive} title="Storage" accessories={[{ text: storage }]} />
       </List.Section>
-      <List.Section title="Pricing">
+      <List.Section title={`Pricing (${region})`}>
         <List.Item
           icon={Icon.BankNote}
           title="Pricing"
