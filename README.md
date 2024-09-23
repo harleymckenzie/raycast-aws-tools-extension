@@ -16,9 +16,14 @@ pricing for supported AWS services.
 ## Usage
 
 1. Open Raycast.
-2. Type the name of the AWS service you want to retrieve information for 
+2. Set the AWS profile to use and the default region in the extension 
+   preferences. The AWS profile must have IAM permissions to use the 
+   Billing and Cost Management [GetProducts](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_pricing_GetProducts.html) 
+   and EC2 [DescribeInstanceTypes](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstanceTypes.html) 
+   actions.
+3. Type the name of the AWS service you want to retrieve information for 
    (e.g. "ec2", "rds").
-3. Select the instance you want to retrieve information for.
+4. Select the instance you want to retrieve information for.
 
 ## Supported Services
 
