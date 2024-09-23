@@ -1,3 +1,5 @@
+// search-ec2-instance.tsx
+
 import {
   List,
   LaunchProps,
@@ -7,11 +9,10 @@ import {
   Icon,
   ActionPanel,
   Action,
-  LocalStorage,
 } from "@raycast/api";
 import { useState, useEffect, useRef } from "react";
-import { createPricingClient, fetchBaselineBandwidth } from "./shared/awsClient";
-import { GetProductsCommand } from "@aws-sdk/client-pricing";
+import { fetchInstanceData, fetchBaselineBandwidth } from "./shared/awsClient";
+import { getCachedData, setCachedData } from "./shared/utils";
 
 interface Preferences {
   defaultRegion: string;
@@ -55,7 +56,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
       try {
         const cacheKeyWithRegion = `${CACHE_KEY}_${region}`;
         console.log(`Checking cache for region: ${region}`);
-        const cachedData = await getCachedData<Record<string, InstanceDetails>>(cacheKeyWithRegion);
+        const cachedData = await getCachedData<Record<string, InstanceDetails>>(cacheKeyWithRegion, 1);
         if (cachedData) {
           console.log("Cache hit. Loading cached data...");
           setLoadingStatus("Loading cached data...");
@@ -67,7 +68,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
           console.log(`Fetched ${Object.keys(data).length} instance types`);
           setInstanceData(data);
           setLoadingStatus("Populating cache...");
-          await setCachedData(cacheKeyWithRegion, data);
+          await setCachedData(cacheKeyWithRegion, 1, data);
           console.log("Cache populated");
         }
       } catch (error) {
@@ -125,7 +126,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
             subtitle={`${info.vcpu} vCPU | ${info.memory} RAM`}
             icon={Icon.ComputerChip}
             accessories={[
-              { text: info.pricePerHour !== null ? `$${info.pricePerHour.toFixed(4)}/hr` : "Price N/A" }
+              { text: info.pricePerHour !== null ? `$${info.pricePerHour.toFixed(4)}/hr` : "Price N/A" },
             ]}
             actions={
               <ActionPanel>
@@ -185,9 +186,7 @@ function InstanceDetailsComponent({
 
   const networkInfo = isFetchingBandwidth
     ? "Fetching baseline bandwidth..."
-    : baselineBandwidth
-    ? `${networkPerformance} | Baseline: ${baselineBandwidth}`
-    : networkPerformance;
+    : baselineBandwidth || networkPerformance;
 
   console.log('Rendering network info:', networkInfo);
 
@@ -199,10 +198,10 @@ function InstanceDetailsComponent({
         <List.Item icon={Icon.MemoryChip} title="Processor Type" accessories={[{ text: processorType }]} />
         <List.Item icon={Icon.MemoryStick} title="Memory" accessories={[{ text: memory }]} />
         <List.Item icon={Icon.HardDrive} title="Storage" accessories={[{ text: storage }]} />
-        <List.Item 
-          icon={Icon.Network} 
-          title="Network Performance" 
-          accessories={[{ text: networkInfo }]} 
+        <List.Item
+          icon={Icon.Network}
+          title="Network Performance"
+          accessories={[{ text: networkInfo }]}
         />
       </List.Section>
       <List.Section title={`Pricing (${region})`}>
@@ -218,101 +217,4 @@ function InstanceDetailsComponent({
       </List.Section>
     </List>
   );
-}
-
-async function fetchInstanceData(
-  region: string,
-  setProgress: (progress: { current: number; total: number }) => void,
-  signal: AbortSignal
-): Promise<Record<string, InstanceDetails>> {
-  console.log(`Starting to fetch EC2 instance data for region: ${region}`);
-  const client = createPricingClient();
-  const instanceData: Record<string, InstanceDetails> = {};
-  let nextToken: string | undefined;
-  let pageCount = 0;
-
-  do {
-    if (signal.aborted) {
-      console.log('Fetch aborted');
-      throw new Error('Fetch aborted');
-    }
-
-    console.log(`Fetching page ${pageCount + 1}`);
-    const command = new GetProductsCommand({
-      ServiceCode: "AmazonEC2",
-      Filters: [
-        { Type: "TERM_MATCH", Field: "operatingSystem", Value: "Linux" },
-        { Type: "TERM_MATCH", Field: "regionCode", Value: region },
-        { Type: "TERM_MATCH", Field: "preInstalledSw", Value: "NA" },
-        { Type: "TERM_MATCH", Field: "capacitystatus", Value: "Used" },
-        { Type: "TERM_MATCH", Field: "tenancy", Value: "Shared" },
-      ],
-      MaxResults: 100,
-      NextToken: nextToken,
-    });
-
-    const response = await client.send(command);
-    pageCount++;
-
-    console.log(`Received page ${pageCount} with ${response.PriceList?.length || 0} items`);
-
-    if (response.PriceList) {
-      for (const priceItem of response.PriceList) {
-        const priceJSON = JSON.parse(priceItem);
-        const product = priceJSON.product;
-        const attributes = product.attributes;
-        const instanceType = attributes.instanceType;
-
-        if (!instanceType) continue;
-
-        const onDemandTerms = priceJSON.terms?.OnDemand;
-        if (onDemandTerms) {
-          const term = Object.values(onDemandTerms)[0];
-          const priceDimensions = term.priceDimensions;
-          const priceDimension = Object.values(priceDimensions)[0];
-          const pricePerUnit = parseFloat(priceDimension.pricePerUnit.USD);
-
-          instanceData[instanceType] = {
-            pricePerHour: pricePerUnit,
-            vcpu: attributes.vcpu,
-            processorType: attributes.physicalProcessor || "Unknown",
-            memory: attributes.memory,
-            storage: attributes.storage,
-            networkPerformance: attributes.networkPerformance,
-            baselineBandwidth: "Fetching...",
-          };
-        }
-      }
-    }
-
-    nextToken = response.NextToken;
-    setProgress({ current: pageCount, total: pageCount });
-    console.log(`Progress: ${pageCount} page(s) processed`);
-  } while (nextToken);
-
-  console.log(`Finished fetching EC2 instance data. Total pages: ${pageCount}`);
-  console.log(`Retrieved data for ${Object.keys(instanceData).length} instance types`);
-
-  return instanceData;
-}
-
-async function getCachedData<T>(key: string): Promise<T | null> {
-  try {
-    const cachedDataString = await LocalStorage.getItem<string>(key);
-    if (cachedDataString) {
-      const cachedData = JSON.parse(cachedDataString);
-      return cachedData as T;
-    }
-  } catch (error) {
-    console.error("Error getting cached data:", error);
-  }
-  return null;
-}
-
-async function setCachedData<T>(key: string, data: T): Promise<void> {
-  try {
-    await LocalStorage.setItem(key, JSON.stringify(data));
-  } catch (error) {
-    console.error("Error setting cached data:", error);
-  }
 }

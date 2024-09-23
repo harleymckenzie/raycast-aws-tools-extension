@@ -1,3 +1,5 @@
+// search-rds-instance.tsx
+
 import {
   List,
   LaunchProps,
@@ -7,11 +9,10 @@ import {
   Icon,
   ActionPanel,
   Action,
-  LocalStorage,
 } from "@raycast/api";
 import { useEffect, useState, useMemo } from "react";
-import { createPricingClient, fetchBaselineBandwidth } from "./shared/awsClient";
-import { GetProductsCommand } from "@aws-sdk/client-pricing";
+import { fetchBaselineBandwidth, fetchDatabaseData } from "./shared/awsClient";
+import { getCachedData, setCachedData } from "./shared/utils";
 
 interface Preferences {
   defaultRegion: string;
@@ -56,7 +57,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
       setLoadingStatus("Checking cache...");
       try {
         const cacheKeyWithParams = `${CACHE_KEY}_${region}_${databaseEngine}_${deploymentOption}`;
-        const cachedData = await getCachedData<Record<string, DatabaseDetails>>(cacheKeyWithParams);
+        const cachedData = await getCachedData<Record<string, DatabaseDetails>>(cacheKeyWithParams, 1);
         if (cachedData) {
           setLoadingStatus("Loading cached data...");
           setDatabaseData(cachedData);
@@ -65,13 +66,13 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
           const data = await fetchDatabaseData(region, databaseEngine, deploymentOption);
           setDatabaseData(data);
           setLoadingStatus("Populating cache...");
-          await setCachedData(cacheKeyWithParams, data);
+          await setCachedData(cacheKeyWithParams, 1, data);
         }
       } catch (error) {
         console.error("Error in fetchData:", error);
         const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
         setError(errorMessage);
-        showToast({
+        await showToast({
           style: Toast.Style.Failure,
           title: "Error",
           message: errorMessage,
@@ -86,7 +87,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
 
   const filteredDatabases = useMemo(() => {
     return Object.entries(databaseData)
-      .filter(([key, info]) => info.instanceType.toLowerCase().includes(searchText.toLowerCase()))
+      .filter(([_, info]) => info.instanceType.toLowerCase().includes(searchText.toLowerCase()))
       .sort(([a], [b]) => a.localeCompare(b));
   }, [databaseData, searchText]);
 
@@ -146,6 +147,7 @@ function DatabaseDetailsComponent({
     const fetchBandwidth = async () => {
       setIsFetchingBandwidth(true);
       try {
+        console.log(`Fetching bandwidth for ${details.instanceType} in ${region}`);
         const bandwidth = await fetchBaselineBandwidth(details.instanceType.replace(/^db\./, ""), region);
         setBaselineBandwidth(bandwidth);
       } catch (error) {
@@ -210,75 +212,3 @@ function DatabaseDetailsComponent({
   );
 }
 
-async function fetchDatabaseData(region: string, engine: string, deploymentOption: string): Promise<Record<string, DatabaseDetails>> {
-  const client = createPricingClient();
-  const databaseData: Record<string, DatabaseDetails> = {};
-
-  const command = new GetProductsCommand({
-    ServiceCode: "AmazonRDS",
-    Filters: [
-      { Type: "TERM_MATCH", Field: "regionCode", Value: region },
-      { Type: "TERM_MATCH", Field: "databaseEngine", Value: engine },
-      { Type: "TERM_MATCH", Field: "deploymentOption", Value: deploymentOption },
-    ],
-  });
-
-  try {
-    const response = await client.send(command);
-    if (response.PriceList) {
-      for (const priceItem of response.PriceList) {
-        const priceJSON = JSON.parse(priceItem);
-        const attributes = priceJSON.product.attributes;
-        const instanceType = attributes.instanceType;
-
-        if (!instanceType) continue;
-
-        const onDemandTerms = priceJSON.terms?.OnDemand;
-        if (onDemandTerms) {
-          const term = Object.values(onDemandTerms)[0] as any;
-          const priceDimensions = term.priceDimensions;
-          const priceDimension = Object.values(priceDimensions)[0] as any;
-          const pricePerUnit = parseFloat(priceDimension.pricePerUnit.USD);
-
-          databaseData[instanceType] = {
-            pricePerHour: pricePerUnit,
-            engine: attributes.databaseEngine,
-            databaseEdition: attributes.databaseEdition,
-            deploymentOption: attributes.deploymentOption,
-            instanceType: instanceType,
-            vcpu: attributes.vcpu,
-            memory: attributes.memory,
-            storage: attributes.storage,
-            processorType: attributes.physicalProcessor || "N/A",
-            networkPerformance: attributes.networkPerformance,
-          };
-        }
-      }
-    }
-  } catch (error) {
-    console.error("Error fetching database data:", error);
-    throw error;
-  }
-
-  return databaseData;
-}
-
-async function getCachedData<T>(key: string): Promise<T | null> {
-  try {
-    const cachedDataString = await LocalStorage.getItem<string>(key);
-    if (cachedDataString) {
-      return JSON.parse(cachedDataString) as T;
-    }
-  } catch (error) {
-    console.error("Error getting cached data:", error);
-  }
-  return null;
-}
-
-async function setCachedData<T>(key: string, data: T): Promise<void> {
-  try {
-    await LocalStorage.setItem(key, JSON.stringify(data));
-  } catch (error) {
-    console.error("Error setting cached data:", error);
-  }
-}
