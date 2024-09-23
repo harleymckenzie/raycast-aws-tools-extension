@@ -9,7 +9,7 @@ import {
   Action,
   LocalStorage,
 } from "@raycast/api";
-import { useEffect, useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createPricingClient, fetchBaselineBandwidth } from "./shared/awsClient";
 import { GetProductsCommand } from "@aws-sdk/client-pricing";
 
@@ -21,10 +21,10 @@ interface InstanceDetails {
   pricePerHour: number | null;
   memory: string;
   vcpu: string;
-  processorType: string; // Updated to processorType
+  processorType: string;
   storage: string;
   networkPerformance: string;
-  baselineBandwidth?: string; // Updated to optional
+  baselineBandwidth?: string;
 }
 
 interface CommandArguments {
@@ -40,23 +40,41 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchText, setSearchText] = useState(props.arguments.instanceType || "");
+  const [loadingStatus, setLoadingStatus] = useState("Initializing...");
+  const [fetchProgress, setFetchProgress] = useState({ current: 0, total: 0 });
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const region = props.arguments.region || defaultRegion;
 
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
+      setLoadingStatus("Checking cache...");
+      abortControllerRef.current = new AbortController();
+
       try {
         const cacheKeyWithRegion = `${CACHE_KEY}_${region}`;
+        console.log(`Checking cache for region: ${region}`);
         const cachedData = await getCachedData<Record<string, InstanceDetails>>(cacheKeyWithRegion);
         if (cachedData) {
+          console.log("Cache hit. Loading cached data...");
+          setLoadingStatus("Loading cached data...");
           setInstanceData(cachedData);
         } else {
-          const data = await fetchInstanceData(region);
+          console.log("Cache miss. Fetching instance data from AWS...");
+          setLoadingStatus("Fetching instance data from AWS...");
+          const data = await fetchInstanceData(region, setFetchProgress, abortControllerRef.current.signal);
+          console.log(`Fetched ${Object.keys(data).length} instance types`);
           setInstanceData(data);
+          setLoadingStatus("Populating cache...");
           await setCachedData(cacheKeyWithRegion, data);
+          console.log("Cache populated");
         }
       } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.log('Fetch aborted');
+          return;
+        }
         console.error("Error in fetchData:", error);
         const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
         setError(errorMessage);
@@ -67,10 +85,17 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
         });
       } finally {
         setIsLoading(false);
+        abortControllerRef.current = null;
       }
     };
 
     fetchData();
+
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, [region]);
 
   const filteredInstances = Object.entries(instanceData)
@@ -84,7 +109,13 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
       searchBarPlaceholder="Search EC2 instance types..."
       searchText={searchText}
     >
-      {error ? (
+      {isLoading ? (
+        <List.EmptyView
+          icon={Icon.Cloud}
+          title="Loading EC2 instance data"
+          description={loadingStatus}
+        />
+      ) : error ? (
         <List.Item title="Error" subtitle={error} icon={Icon.ExclamationMark} />
       ) : (
         filteredInstances.map(([instanceType, info]) => (
@@ -93,11 +124,9 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
             title={instanceType}
             subtitle={`${info.vcpu} vCPU | ${info.memory} RAM`}
             icon={Icon.ComputerChip}
-            accessories={
-              info.pricePerHour !== null
-                ? [{ text: `$${info.pricePerHour.toFixed(4)}/hr` }]
-                : [{ text: "Price N/A" }]
-            }
+            accessories={[
+              { text: info.pricePerHour !== null ? `$${info.pricePerHour.toFixed(4)}/hr` : "Price N/A" }
+            ]}
             actions={
               <ActionPanel>
                 <Action.Push
@@ -106,7 +135,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
                     <InstanceDetailsComponent
                       instanceType={instanceType}
                       details={info}
-                      region={region}  // Pass region as a prop
+                      region={region}
                     />
                   }
                 />
@@ -120,30 +149,61 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
 }
 
 function InstanceDetailsComponent({
+  instanceType,
   details,
   region,
 }: {
+  instanceType: string;
   details: InstanceDetails;
   region: string;
 }) {
-  const { pricePerHour, memory, vcpu, processorType, storage, networkPerformance, baselineBandwidth } = details;
+  const [baselineBandwidth, setBaselineBandwidth] = useState<string | null>(null);
+  const [isFetchingBandwidth, setIsFetchingBandwidth] = useState(true);
+
+  useEffect(() => {
+    const fetchNetworkPerformance = async () => {
+      setIsFetchingBandwidth(true);
+      try {
+        console.log(`Fetching network performance for ${instanceType} in ${region}`);
+        const performance = await fetchBaselineBandwidth(instanceType, region);
+        console.log(`Received network performance: ${performance}`);
+        setBaselineBandwidth(performance);
+      } catch (error) {
+        console.error(`Error fetching network performance for ${instanceType}:`, error);
+      } finally {
+        setIsFetchingBandwidth(false);
+      }
+    };
+
+    fetchNetworkPerformance();
+  }, [instanceType, region]);
+
+  const { pricePerHour, memory, vcpu, processorType, storage, networkPerformance } = details;
   const hourlyCost = pricePerHour ?? 0;
   const dailyCost = hourlyCost * 24;
   const monthlyCost = dailyCost * 30;
 
-  const networkThroughput = baselineBandwidth
+  const networkInfo = isFetchingBandwidth
+    ? "Fetching baseline bandwidth..."
+    : baselineBandwidth
     ? `${networkPerformance} | Baseline: ${baselineBandwidth}`
     : networkPerformance;
 
+  console.log('Rendering network info:', networkInfo);
+
   return (
-    <List navigationTitle={`Details for ${details.instanceType}`}>
+    <List navigationTitle={`Details for ${instanceType}`}>
       <List.Section title="Instance Details">
-        <List.Item icon={Icon.Monitor} title="Instance Type" accessories={[{ text: details.instanceType }]} />
+        <List.Item icon={Icon.Monitor} title="Instance Type" accessories={[{ text: instanceType }]} />
         <List.Item icon={Icon.MemoryChip} title="vCPU" accessories={[{ text: `${vcpu} vCPU` }]} />
         <List.Item icon={Icon.MemoryChip} title="Processor Type" accessories={[{ text: processorType }]} />
         <List.Item icon={Icon.MemoryStick} title="Memory" accessories={[{ text: memory }]} />
         <List.Item icon={Icon.HardDrive} title="Storage" accessories={[{ text: storage }]} />
-        <List.Item icon={Icon.Network} title="Network Performance" accessories={[{ text: networkThroughput }]} />
+        <List.Item 
+          icon={Icon.Network} 
+          title="Network Performance" 
+          accessories={[{ text: networkInfo }]} 
+        />
       </List.Section>
       <List.Section title={`Pricing (${region})`}>
         <List.Item
@@ -160,11 +220,24 @@ function InstanceDetailsComponent({
   );
 }
 
-// Fetch Instance Data function
-async function fetchInstanceData(region: string): Promise<Record<string, InstanceDetails>> {
+async function fetchInstanceData(
+  region: string,
+  setProgress: (progress: { current: number; total: number }) => void,
+  signal: AbortSignal
+): Promise<Record<string, InstanceDetails>> {
+  console.log(`Starting to fetch EC2 instance data for region: ${region}`);
   const client = createPricingClient();
+  const instanceData: Record<string, InstanceDetails> = {};
+  let nextToken: string | undefined;
+  let pageCount = 0;
 
-  try {
+  do {
+    if (signal.aborted) {
+      console.log('Fetch aborted');
+      throw new Error('Fetch aborted');
+    }
+
+    console.log(`Fetching page ${pageCount + 1}`);
     const command = new GetProductsCommand({
       ServiceCode: "AmazonEC2",
       Filters: [
@@ -175,75 +248,54 @@ async function fetchInstanceData(region: string): Promise<Record<string, Instanc
         { Type: "TERM_MATCH", Field: "tenancy", Value: "Shared" },
       ],
       MaxResults: 100,
+      NextToken: nextToken,
     });
 
-    const instanceData: Record<string, InstanceDetails> = {};
-    let hasNext = true;
-    let nextToken: string | undefined;
+    const response = await client.send(command);
+    pageCount++;
 
-    while (hasNext) {
-      const response = await client.send(command);
-      if (response.PriceList) {
-        for (const priceItem of response.PriceList) {
-          const priceJSON = JSON.parse(priceItem);
-          const product = priceJSON.product;
-          const attributes = product.attributes;
-          const instanceType = attributes.instanceType;
+    console.log(`Received page ${pageCount} with ${response.PriceList?.length || 0} items`);
 
-          if (!instanceType) continue;
+    if (response.PriceList) {
+      for (const priceItem of response.PriceList) {
+        const priceJSON = JSON.parse(priceItem);
+        const product = priceJSON.product;
+        const attributes = product.attributes;
+        const instanceType = attributes.instanceType;
 
-          const onDemandTerms = priceJSON.terms?.OnDemand;
-          if (onDemandTerms) {
-            const term = Object.values(onDemandTerms)[0];
-            const priceDimensions = term.priceDimensions;
-            const priceDimension = Object.values(priceDimensions)[0];
-            const pricePerUnit = parseFloat(priceDimension.pricePerUnit.USD);
+        if (!instanceType) continue;
 
-            // Use physicalProcessor attribute to get the processor type
-            const processorType = attributes.physicalProcessor || "Unknown";
+        const onDemandTerms = priceJSON.terms?.OnDemand;
+        if (onDemandTerms) {
+          const term = Object.values(onDemandTerms)[0];
+          const priceDimensions = term.priceDimensions;
+          const priceDimension = Object.values(priceDimensions)[0];
+          const pricePerUnit = parseFloat(priceDimension.pricePerUnit.USD);
 
-            instanceData[instanceType] = {
-              pricePerHour: pricePerUnit,
-              vcpu: attributes.vcpu,
-              processorType,
-              memory: attributes.memory,
-              storage: attributes.storage,
-              networkPerformance: attributes.networkPerformance,
-              baselineBandwidth: "Fetching...", // Placeholder
-            };
-          }
+          instanceData[instanceType] = {
+            pricePerHour: pricePerUnit,
+            vcpu: attributes.vcpu,
+            processorType: attributes.physicalProcessor || "Unknown",
+            memory: attributes.memory,
+            storage: attributes.storage,
+            networkPerformance: attributes.networkPerformance,
+            baselineBandwidth: "Fetching...",
+          };
         }
       }
-
-      nextToken = response.NextToken;
-      hasNext = !!nextToken;
-      command.input.NextToken = nextToken;
     }
 
-    // Extract instance types from instanceData
-    const instanceTypes = Object.keys(instanceData);
+    nextToken = response.NextToken;
+    setProgress({ current: pageCount, total: pageCount });
+    console.log(`Progress: ${pageCount} page(s) processed`);
+  } while (nextToken);
 
-    // Fetch baseline bandwidths in parallel
-    const baselineBandwidths = await fetchBaselineBandwidth(instanceTypes, region);
-    for (const instanceType of instanceTypes) {
-      // If EC2 instance types have prefixes, adjust here (e.g., no prefix assumed)
-      const ec2InstanceType = instanceType; // Modify if necessary
+  console.log(`Finished fetching EC2 instance data. Total pages: ${pageCount}`);
+  console.log(`Retrieved data for ${Object.keys(instanceData).length} instance types`);
 
-      if (baselineBandwidths[ec2InstanceType]) {
-        instanceData[instanceType].baselineBandwidth = baselineBandwidths[ec2InstanceType];
-      } else {
-        delete instanceData[instanceType].baselineBandwidth;
-      }
-    }
-
-    return instanceData;
-  } catch (error) {
-    console.error("Error fetching instance data:", error);
-    throw error;
-  }
+  return instanceData;
 }
 
-// Caching functions
 async function getCachedData<T>(key: string): Promise<T | null> {
   try {
     const cachedDataString = await LocalStorage.getItem<string>(key);

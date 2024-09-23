@@ -1,5 +1,3 @@
-// rds.tsx
-
 import {
   List,
   LaunchProps,
@@ -11,7 +9,7 @@ import {
   Action,
   LocalStorage,
 } from "@raycast/api";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { createPricingClient, fetchBaselineBandwidth } from "./shared/awsClient";
 import { GetProductsCommand } from "@aws-sdk/client-pricing";
 
@@ -28,9 +26,8 @@ interface DatabaseDetails {
   vcpu: string;
   memory: string;
   storage: string;
-  processorType: string; // Added processorType
+  processorType: string;
   networkPerformance: string;
-  baselineBandwidth?: string; // Updated to optional
 }
 
 interface CommandArguments {
@@ -47,22 +44,27 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchText, setSearchText] = useState(props.arguments.instanceType || "");
+  const [loadingStatus, setLoadingStatus] = useState("Initializing...");
 
   const region = props.arguments.region || defaultRegion;
-  const databaseEngine = props.arguments.databaseEngine;
-  const deploymentOption = "Single-AZ"; // Default deployment option
+  const databaseEngine = props.arguments.databaseEngine || "MySQL";
+  const deploymentOption = "Single-AZ";
 
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
+      setLoadingStatus("Checking cache...");
       try {
         const cacheKeyWithParams = `${CACHE_KEY}_${region}_${databaseEngine}_${deploymentOption}`;
         const cachedData = await getCachedData<Record<string, DatabaseDetails>>(cacheKeyWithParams);
         if (cachedData) {
+          setLoadingStatus("Loading cached data...");
           setDatabaseData(cachedData);
         } else {
+          setLoadingStatus("Fetching instance data from AWS...");
           const data = await fetchDatabaseData(region, databaseEngine, deploymentOption);
           setDatabaseData(data);
+          setLoadingStatus("Populating cache...");
           await setCachedData(cacheKeyWithParams, data);
         }
       } catch (error) {
@@ -82,9 +84,11 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
     fetchData();
   }, [region, databaseEngine]);
 
-  const filteredDatabases = Object.entries(databaseData)
-    .filter(([key, info]) => info.instanceType.toLowerCase().includes(searchText.toLowerCase()))
-    .sort(([a], [b]) => a.localeCompare(b));
+  const filteredDatabases = useMemo(() => {
+    return Object.entries(databaseData)
+      .filter(([key, info]) => info.instanceType.toLowerCase().includes(searchText.toLowerCase()))
+      .sort(([a], [b]) => a.localeCompare(b));
+  }, [databaseData, searchText]);
 
   return (
     <List
@@ -93,30 +97,31 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
       searchBarPlaceholder="Search RDS instance types..."
       searchText={searchText}
     >
-      {error ? (
+      {isLoading ? (
+        <List.EmptyView
+          icon={Icon.Cloud}
+          title="Loading RDS instance data"
+          description={loadingStatus}
+        />
+      ) : error ? (
         <List.Item title="Error" subtitle={error} icon={Icon.ExclamationMark} />
       ) : (
         filteredDatabases.map(([key, info]) => (
           <List.Item
             key={key}
             title={info.instanceType}
-            subtitle={`${info.engine} | ${info.vcpu} vCPU | ${info.memory} RAM`}
+            subtitle={`${info.vcpu} vCPU | ${info.memory} RAM`}
             icon={Icon.MemoryChip}
             accessories={
               info.pricePerHour !== null
-                ? [{ text: `$${info.pricePerHour.toFixed(4)}/hr` }]
+                ? [{ text: `${info.engine} | $${info.pricePerHour.toFixed(4)}/hr` }]
                 : [{ text: "Price N/A" }]
             }
             actions={
               <ActionPanel>
                 <Action.Push
                   title="View Details"
-                  target={
-                    <DatabaseDetailsComponent
-                      details={info}
-                      region={region}  // Pass region as a prop
-                    />
-                  }
+                  target={<DatabaseDetailsComponent details={info} region={region} />}
                 />
               </ActionPanel>
             }
@@ -134,12 +139,44 @@ function DatabaseDetailsComponent({
   details: DatabaseDetails;
   region: string;
 }) {
-  const { pricePerHour, engine, databaseEdition, deploymentOption, instanceType, vcpu, memory, storage, processorType, networkPerformance, baselineBandwidth } = details;
+  const [baselineBandwidth, setBaselineBandwidth] = useState<string | null>(null);
+  const [isFetchingBandwidth, setIsFetchingBandwidth] = useState(true);
+
+  useEffect(() => {
+    const fetchBandwidth = async () => {
+      setIsFetchingBandwidth(true);
+      try {
+        const bandwidth = await fetchBaselineBandwidth(details.instanceType.replace(/^db\./, ""), region);
+        setBaselineBandwidth(bandwidth);
+      } catch (error) {
+        console.error(`Error fetching bandwidth for ${details.instanceType}:`, error);
+      } finally {
+        setIsFetchingBandwidth(false);
+      }
+    };
+
+    fetchBandwidth();
+  }, [details.instanceType, region]);
+
+  const {
+    pricePerHour,
+    engine,
+    databaseEdition,
+    deploymentOption,
+    instanceType,
+    vcpu,
+    memory,
+    storage,
+    processorType,
+    networkPerformance,
+  } = details;
   const hourlyCost = pricePerHour ?? 0;
   const dailyCost = hourlyCost * 24;
   const monthlyCost = dailyCost * 30;
 
-  const networkThroughput = baselineBandwidth
+  const networkThroughput = isFetchingBandwidth
+    ? "Fetching baseline bandwidth..."
+    : baselineBandwidth
     ? `${networkPerformance} | Baseline: ${baselineBandwidth}`
     : networkPerformance;
 
@@ -152,7 +189,11 @@ function DatabaseDetailsComponent({
         <List.Item icon={Icon.MemoryChip} title="Processor Type" accessories={[{ text: processorType }]} />
         <List.Item icon={Icon.MemoryStick} title="Memory" accessories={[{ text: memory }]} />
         <List.Item icon={Icon.HardDrive} title="Storage" accessories={[{ text: storage }]} />
-        <List.Item icon={Icon.Network} title="Network Performance" accessories={[{ text: networkThroughput }]} />
+        <List.Item
+          icon={Icon.Network}
+          title="Network Performance"
+          accessories={[{ text: networkThroughput }]}
+        />
       </List.Section>
       <List.Section title={`Pricing (${region})`}>
         <List.Item
@@ -169,107 +210,64 @@ function DatabaseDetailsComponent({
   );
 }
 
-// Fetch Database Data function
-async function fetchDatabaseData(
-  region: string,
-  databaseEngine: string,
-  deploymentOption: string
-): Promise<Record<string, DatabaseDetails>> {
+async function fetchDatabaseData(region: string, engine: string, deploymentOption: string): Promise<Record<string, DatabaseDetails>> {
   const client = createPricingClient();
+  const databaseData: Record<string, DatabaseDetails> = {};
+
+  const command = new GetProductsCommand({
+    ServiceCode: "AmazonRDS",
+    Filters: [
+      { Type: "TERM_MATCH", Field: "regionCode", Value: region },
+      { Type: "TERM_MATCH", Field: "databaseEngine", Value: engine },
+      { Type: "TERM_MATCH", Field: "deploymentOption", Value: deploymentOption },
+    ],
+  });
 
   try {
-    const filters = [
-      { Type: "TERM_MATCH", Field: "productFamily", Value: "Database Instance" },
-      { Type: "TERM_MATCH", Field: "databaseEngine", Value: databaseEngine },
-      { Type: "TERM_MATCH", Field: "regionCode", Value: region },
-      { Type: "TERM_MATCH", Field: "deploymentOption", Value: deploymentOption },
-    ];
+    const response = await client.send(command);
+    if (response.PriceList) {
+      for (const priceItem of response.PriceList) {
+        const priceJSON = JSON.parse(priceItem);
+        const attributes = priceJSON.product.attributes;
+        const instanceType = attributes.instanceType;
 
-    const command = new GetProductsCommand({
-      ServiceCode: "AmazonRDS",
-      Filters: filters,
-      MaxResults: 100,
-    });
+        if (!instanceType) continue;
 
-    const databaseData: Record<string, DatabaseDetails> = {};
-    let hasNext = true;
-    let nextToken: string | undefined;
+        const onDemandTerms = priceJSON.terms?.OnDemand;
+        if (onDemandTerms) {
+          const term = Object.values(onDemandTerms)[0] as any;
+          const priceDimensions = term.priceDimensions;
+          const priceDimension = Object.values(priceDimensions)[0] as any;
+          const pricePerUnit = parseFloat(priceDimension.pricePerUnit.USD);
 
-    while (hasNext) {
-      const response = await client.send(command);
-      if (response.PriceList) {
-        for (const priceItem of response.PriceList) {
-          const priceJSON = JSON.parse(priceItem);
-          const product = priceJSON.product;
-          const attributes = product.attributes;
-          const instanceType = attributes.instanceType;
-
-          if (!instanceType) continue;
-
-          const onDemandTerms = priceJSON.terms?.OnDemand;
-          if (onDemandTerms) {
-            const term = Object.values(onDemandTerms)[0];
-            const priceDimensions = term.priceDimensions;
-            const priceDimension = Object.values(priceDimensions)[0];
-            const pricePerUnit = parseFloat(priceDimension.pricePerUnit.USD);
-
-            // Use physicalProcessor attribute to get the processor type
-            const processorType = attributes.physicalProcessor || "Unknown";
-
-            databaseData[instanceType] = {
-              pricePerHour: pricePerUnit,
-              engine: attributes.databaseEngine,
-              databaseEdition: attributes.databaseEdition || "N/A",
-              deploymentOption,
-              instanceType,
-              vcpu: attributes.vcpu,
-              memory: attributes.memory,
-              storage: attributes.storage || "N/A",
-              processorType, // Include processorType in the data
-              networkPerformance: attributes.networkPerformance,
-              baselineBandwidth: "Fetching...", // Placeholder
-            };
-          }
+          databaseData[instanceType] = {
+            pricePerHour: pricePerUnit,
+            engine: attributes.databaseEngine,
+            databaseEdition: attributes.databaseEdition,
+            deploymentOption: attributes.deploymentOption,
+            instanceType: instanceType,
+            vcpu: attributes.vcpu,
+            memory: attributes.memory,
+            storage: attributes.storage,
+            processorType: attributes.physicalProcessor || "N/A",
+            networkPerformance: attributes.networkPerformance,
+          };
         }
       }
-
-      nextToken = response.NextToken;
-      hasNext = !!nextToken;
-      command.input.NextToken = nextToken;
     }
-
-    // Extract instance types from databaseData
-    const instanceTypes = Object.keys(databaseData);
-
-    // Fetch baseline bandwidths in parallel
-    const baselineBandwidths = await fetchBaselineBandwidth(instanceTypes, region);
-    for (const instanceType of instanceTypes) {
-      // Adjust instanceType by stripping the 'db.' prefix if present
-      const ec2InstanceType = instanceType.startsWith("db.")
-        ? instanceType.replace("db.", "")
-        : instanceType;
-
-      if (baselineBandwidths[ec2InstanceType]) {
-        databaseData[instanceType].baselineBandwidth = baselineBandwidths[ec2InstanceType];
-      } else {
-        delete databaseData[instanceType].baselineBandwidth;
-      }
-    }
-
-    return databaseData;
   } catch (error) {
     console.error("Error fetching database data:", error);
     throw error;
   }
+
+  return databaseData;
 }
 
-// Caching functions
 async function getCachedData<T>(key: string): Promise<T | null> {
   try {
     const cachedDataString = await LocalStorage.getItem<string>(key);
     if (cachedDataString) {
-      const cachedData = JSON.parse(cachedDataString);
-      return cachedData as T;
+      return JSON.parse(cachedDataString) as T;
     }
   } catch (error) {
     console.error("Error getting cached data:", error);

@@ -25,7 +25,6 @@ interface NodeDetails {
   networkPerformance: string;
   vcpu: string;
   nodeType: string;
-  baselineBandwidth?: string; // Updated to optional
 }
 
 interface CommandArguments {
@@ -41,20 +40,27 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchText, setSearchText] = useState(props.arguments.nodeType || "");
+  const [loadingStatus, setLoadingStatus] = useState("Initializing...");
 
   const region = props.arguments.region || defaultRegion;
 
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
+      setLoadingStatus("Checking cache...");
       try {
         const cacheKeyWithRegion = `${CACHE_KEY}_${region}`;
         const cachedData = await getCachedData<Record<string, NodeDetails>>(cacheKeyWithRegion);
         if (cachedData) {
+          console.log("Using cached ElastiCache node data");
+          setLoadingStatus("Loading cached data...");
           setNodeData(cachedData);
         } else {
+          console.log("Fetching fresh ElastiCache node data");
+          setLoadingStatus("Fetching node data from AWS...");
           const data = await fetchNodeData(region);
           setNodeData(data);
+          setLoadingStatus("Populating cache...");
           await setCachedData(cacheKeyWithRegion, data);
         }
       } catch (error) {
@@ -87,8 +93,20 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
       searchBarPlaceholder="Search ElastiCache Redis node types..."
       searchText={searchText}
     >
-      {error ? (
+      {isLoading ? (
+        <List.EmptyView
+          icon={Icon.Cloud}
+          title="Loading ElastiCache node data"
+          description={loadingStatus}
+        />
+      ) : error ? (
         <List.Item title="Error" subtitle={error} icon={Icon.ExclamationMark} />
+      ) : filteredNodes.length === 0 ? (
+        <List.EmptyView
+          icon={Icon.MagnifyingGlass}
+          title="No matching nodes found"
+          description="Try adjusting your search term"
+        />
       ) : (
         filteredNodes.map(([nodeType, info]) => (
           <List.Item
@@ -107,7 +125,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
                     <NodeDetailsComponent
                       nodeType={nodeType}
                       details={info}
-                      region={region} // Pass region as a prop
+                      region={region}
                     />
                   }
                 />
@@ -129,12 +147,35 @@ function NodeDetailsComponent({
   details: NodeDetails;
   region: string;
 }) {
-  const { pricePerHour, memory, networkPerformance, vcpu, baselineBandwidth } = details;
+  const [baselineBandwidth, setBaselineBandwidth] = useState<string | null>(null);
+  const [isFetchingBandwidth, setIsFetchingBandwidth] = useState(true);
+
+  useEffect(() => {
+    const fetchBandwidth = async () => {
+      setIsFetchingBandwidth(true);
+      try {
+        console.log(`Fetching bandwidth for ${nodeType} in ${region}`);
+        const bandwidth = await fetchBaselineBandwidth(nodeType.replace("cache.", ""), region);
+        console.log(`Received bandwidth for ${nodeType}: ${bandwidth}`);
+        setBaselineBandwidth(bandwidth);
+      } catch (error) {
+        console.error(`Error fetching bandwidth for ${nodeType}:`, error);
+      } finally {
+        setIsFetchingBandwidth(false);
+      }
+    };
+
+    fetchBandwidth();
+  }, [nodeType, region]);
+
+  const { pricePerHour, memory, networkPerformance, vcpu } = details;
   const hourlyCost = pricePerHour ?? 0;
   const dailyCost = hourlyCost * 24;
   const monthlyCost = hourlyCost * 730; // More accurate monthly estimation
 
-  const networkThroughput = baselineBandwidth
+  const networkThroughput = isFetchingBandwidth
+    ? "Fetching baseline bandwidth..."
+    : baselineBandwidth
     ? `${networkPerformance} | Baseline: ${baselineBandwidth}`
     : networkPerformance;
 
@@ -163,85 +204,59 @@ function NodeDetailsComponent({
 
 // Fetch Node Data function
 async function fetchNodeData(region: string): Promise<Record<string, NodeDetails>> {
+  console.log(`Fetching ElastiCache node data for region: ${region}`);
   const client = createPricingClient();
-
-  const paginatorConfig = {
-    client,
-    pageSize: 100,
-  };
-
-  const input = {
-    ServiceCode: "AmazonElastiCache",
-    Filters: [
-      { Type: "TERM_MATCH", Field: "cacheEngine", Value: "Redis" },
-      { Type: "TERM_MATCH", Field: "regionCode", Value: region },
-      { Type: "TERM_MATCH", Field: "productFamily", Value: "Cache Instance" },
-    ],
-  };
-
-  const paginator = paginateGetProducts(paginatorConfig, input);
-
   const nodeData: Record<string, NodeDetails> = {};
 
-  try {
-    for await (const page of paginator) {
-      if (page.PriceList) {
-        for (const priceItem of page.PriceList) {
-          const priceJSON = JSON.parse(priceItem);
-          const product = priceJSON.product;
-          const attributes = product.attributes;
-          const nodeType = attributes.instanceType;
+  const paginator = paginateGetProducts(
+    { client },
+    {
+      ServiceCode: "AmazonElastiCache",
+      Filters: [
+        { Type: "TERM_MATCH", Field: "regionCode", Value: region },
+        { Type: "TERM_MATCH", Field: "cacheEngine", Value: "Redis" },
+      ],
+    }
+  );
 
-          if (!nodeType) continue;
+  for await (const page of paginator) {
+    if (page.PriceList) {
+      for (const priceItem of page.PriceList) {
+        const priceJSON = JSON.parse(priceItem);
+        const product = priceJSON.product;
+        const attributes = product.attributes;
+        const nodeType = attributes.instanceType;
 
-          const onDemandTerms = priceJSON.terms?.OnDemand;
-          if (onDemandTerms) {
-            const term = Object.values(onDemandTerms)[0];
-            const priceDimensions = term.priceDimensions;
-            const priceDimension = Object.values(priceDimensions)[0];
-            const pricePerUnit = parseFloat(priceDimension?.pricePerUnit?.USD ?? "0");
+        if (!nodeType) continue;
 
-            nodeData[nodeType] = {
-              pricePerHour: pricePerUnit,
-              vcpu: attributes.vcpu,
-              memory: attributes.memory,
-              networkPerformance: attributes.networkPerformance,
-              nodeType,
-              baselineBandwidth: "Fetching...", // Placeholder
-            };
-          }
+        const onDemandTerms = priceJSON.terms?.OnDemand;
+        if (onDemandTerms) {
+          const term = Object.values(onDemandTerms)[0] as any;
+          const priceDimensions = term.priceDimensions;
+          const priceDimension = Object.values(priceDimensions)[0] as any;
+          const pricePerUnit = parseFloat(priceDimension.pricePerUnit.USD);
+
+          nodeData[nodeType] = {
+            pricePerHour: pricePerUnit,
+            memory: attributes.memory,
+            networkPerformance: attributes.networkPerformance,
+            vcpu: attributes.vcpu,
+            nodeType,
+          };
         }
       }
     }
-
-    // Extract node types from nodeData
-    const nodeTypes = Object.keys(nodeData);
-
-    // Fetch baseline bandwidths in parallel
-    const baselineBandwidths = await fetchBaselineBandwidth(nodeTypes, region);
-    for (const nodeType of nodeTypes) {
-      const ec2InstanceType = nodeType.replace("cache.", "");
-      if (baselineBandwidths[ec2InstanceType]) {
-        nodeData[nodeType].baselineBandwidth = baselineBandwidths[ec2InstanceType];
-      } else {
-        delete nodeData[nodeType].baselineBandwidth;
-      }
-    }
-
-    return nodeData;
-  } catch (error) {
-    console.error("Error fetching node data:", error);
-    throw error;
   }
+
+  return nodeData;
 }
 
-// Caching functions
+// Add these caching functions
 async function getCachedData<T>(key: string): Promise<T | null> {
   try {
     const cachedDataString = await LocalStorage.getItem<string>(key);
     if (cachedDataString) {
-      const cachedData = JSON.parse(cachedDataString);
-      return cachedData as T;
+      return JSON.parse(cachedDataString) as T;
     }
   } catch (error) {
     console.error("Error getting cached data:", error);
