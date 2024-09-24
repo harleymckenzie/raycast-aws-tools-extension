@@ -9,11 +9,10 @@ import {
   Icon,
   ActionPanel,
   Action,
-  LocalStorage,
 } from "@raycast/api";
 import { useEffect, useState, useMemo } from "react";
-import { createPricingClient, fetchBaselineBandwidth } from "./shared/awsClient";
-import { paginateGetProducts } from "@aws-sdk/client-pricing";
+import { fetchBaselineBandwidth } from "./shared/awsClient";
+import { getCachedData, setCachedData } from "./shared/utils";
 
 interface Preferences {
   defaultRegion: string;
@@ -50,7 +49,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
       setLoadingStatus("Checking cache...");
       try {
         const cacheKeyWithRegion = `${CACHE_KEY}_${region}`;
-        const cachedData = await getCachedData<Record<string, NodeDetails>>(cacheKeyWithRegion);
+        const cachedData = await getCachedData<Record<string, NodeDetails>>(cacheKeyWithRegion, 1);
         if (cachedData) {
           console.log("Using cached ElastiCache node data");
           setLoadingStatus("Loading cached data...");
@@ -61,7 +60,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
           const data = await fetchNodeData(region);
           setNodeData(data);
           setLoadingStatus("Populating cache...");
-          await setCachedData(cacheKeyWithRegion, data);
+          await setCachedData(cacheKeyWithRegion, 1, data);
         }
       } catch (error) {
         console.error("Error in fetchData:", error);
@@ -115,7 +114,9 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
             subtitle={`${info.vcpu} vCPU | ${info.memory} Memory`}
             icon={Icon.MemoryChip}
             accessories={
-              info.pricePerHour !== null ? [{ text: `$${info.pricePerHour.toFixed(4)}/hr` }] : [{ text: "Price N/A" }]
+              info.pricePerHour !== null
+                ? [{ text: `$${info.pricePerHour.toFixed(4)}/hr` }]
+                : [{ text: "Price N/A" }]
             }
             actions={
               <ActionPanel>
@@ -200,74 +201,4 @@ function NodeDetailsComponent({
       </List.Section>
     </List>
   );
-}
-
-// Fetch Node Data function
-async function fetchNodeData(region: string): Promise<Record<string, NodeDetails>> {
-  console.log(`Fetching ElastiCache node data for region: ${region}`);
-  const client = createPricingClient();
-  const nodeData: Record<string, NodeDetails> = {};
-
-  const paginator = paginateGetProducts(
-    { client },
-    {
-      ServiceCode: "AmazonElastiCache",
-      Filters: [
-        { Type: "TERM_MATCH", Field: "regionCode", Value: region },
-        { Type: "TERM_MATCH", Field: "cacheEngine", Value: "Redis" },
-      ],
-    }
-  );
-
-  for await (const page of paginator) {
-    if (page.PriceList) {
-      for (const priceItem of page.PriceList) {
-        const priceJSON = JSON.parse(priceItem);
-        const product = priceJSON.product;
-        const attributes = product.attributes;
-        const nodeType = attributes.instanceType;
-
-        if (!nodeType) continue;
-
-        const onDemandTerms = priceJSON.terms?.OnDemand;
-        if (onDemandTerms) {
-          const term = Object.values(onDemandTerms)[0] as any;
-          const priceDimensions = term.priceDimensions;
-          const priceDimension = Object.values(priceDimensions)[0] as any;
-          const pricePerUnit = parseFloat(priceDimension.pricePerUnit.USD);
-
-          nodeData[nodeType] = {
-            pricePerHour: pricePerUnit,
-            memory: attributes.memory,
-            networkPerformance: attributes.networkPerformance,
-            vcpu: attributes.vcpu,
-            nodeType,
-          };
-        }
-      }
-    }
-  }
-
-  return nodeData;
-}
-
-// Add these caching functions
-async function getCachedData<T>(key: string): Promise<T | null> {
-  try {
-    const cachedDataString = await LocalStorage.getItem<string>(key);
-    if (cachedDataString) {
-      return JSON.parse(cachedDataString) as T;
-    }
-  } catch (error) {
-    console.error("Error getting cached data:", error);
-  }
-  return null;
-}
-
-async function setCachedData<T>(key: string, data: T): Promise<void> {
-  try {
-    await LocalStorage.setItem(key, JSON.stringify(data));
-  } catch (error) {
-    console.error("Error setting cached data:", error);
-  }
 }

@@ -1,3 +1,5 @@
+// utils.ts
+
 import { LocalStorage } from "@raycast/api";
 
 export async function getCachedData<T>(key: string, version: number): Promise<T | null> {
