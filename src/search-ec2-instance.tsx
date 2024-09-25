@@ -11,7 +11,7 @@ import {
   Action,
 } from "@raycast/api";
 import { useState, useEffect, useRef } from "react";
-import { fetchInstanceData, fetchBaselineBandwidth } from "./shared/awsClient";
+import { fetchInstanceData, fetchBaselineBandwidth, ServiceCode } from "./shared/awsClient";
 import { getCachedData, setCachedData } from "./shared/utils";
 
 interface Preferences {
@@ -64,7 +64,19 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
         } else {
           console.log("Cache miss. Fetching instance data from AWS...");
           setLoadingStatus("Fetching instance data from AWS...");
-          const data = await fetchInstanceData(region, setFetchProgress, abortControllerRef.current.signal);
+          const filters = [
+            { Type: "TERM_MATCH", Field: "regionCode", Value: region },
+            { Type: "TERM_MATCH", Field: "operatingSystem", Value: "Linux" },
+            { Type: "TERM_MATCH", Field: "tenancy", Value: "Shared" },
+            { Type: "TERM_MATCH", Field: "capacitystatus", Value: "Used" },
+          ];
+          const data = await fetchInstanceData(
+            region,
+            ServiceCode.EC2,
+            filters,
+            setFetchProgress,
+            abortControllerRef.current.signal
+          );
           console.log(`Fetched ${Object.keys(data).length} instance types`);
           setInstanceData(data);
           setLoadingStatus("Populating cache...");

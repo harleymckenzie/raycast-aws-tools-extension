@@ -11,7 +11,7 @@ import {
   Action,
 } from "@raycast/api";
 import { useEffect, useState, useMemo } from "react";
-import { fetchBaselineBandwidth, fetchDatabaseData } from "./shared/awsClient";
+import { fetchBaselineBandwidth, fetchInstanceData, ServiceCode } from "./shared/awsClient";
 import { getCachedData, setCachedData } from "./shared/utils";
 
 interface Preferences {
@@ -63,7 +63,12 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
           setDatabaseData(cachedData);
         } else {
           setLoadingStatus("Fetching instance data from AWS...");
-          const data = await fetchDatabaseData(region, databaseEngine, deploymentOption);
+          const filters = [
+            { Type: "TERM_MATCH", Field: "regionCode", Value: region },
+            { Type: "TERM_MATCH", Field: "databaseEngine", Value: databaseEngine },
+            { Type: "TERM_MATCH", Field: "deploymentOption", Value: deploymentOption },
+          ];
+          const data = await fetchInstanceData(region, ServiceCode.RDS, filters);
           setDatabaseData(data);
           setLoadingStatus("Populating cache...");
           await setCachedData(cacheKeyWithParams, 1, data);

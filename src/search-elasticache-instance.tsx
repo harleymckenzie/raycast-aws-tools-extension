@@ -11,7 +11,7 @@ import {
   Action,
 } from "@raycast/api";
 import { useEffect, useState, useMemo } from "react";
-import { fetchNodeData, fetchBaselineBandwidth } from "./shared/awsClient";
+import { fetchBaselineBandwidth, fetchInstanceData, ServiceCode } from "./shared/awsClient";
 import { getCachedData, setCachedData } from "./shared/utils";
 
 interface Preferences {
@@ -57,7 +57,11 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
         } else {
           console.log("Fetching fresh ElastiCache node data");
           setLoadingStatus("Fetching node data from AWS...");
-          const data = await fetchNodeData(region);
+          const filters = [
+            { Type: "TERM_MATCH", Field: "regionCode", Value: region },
+            { Type: "TERM_MATCH", Field: "cacheEngine", Value: "Redis" },
+          ];
+          const data = await fetchInstanceData(region, ServiceCode.ElastiCache, filters);
           setNodeData(data);
           setLoadingStatus("Populating cache...");
           await setCachedData(cacheKeyWithRegion, 1, data);
