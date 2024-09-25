@@ -11,7 +11,7 @@ import {
   Action,
 } from "@raycast/api";
 import { useEffect, useState, useMemo } from "react";
-import { fetchBaselineBandwidth } from "./shared/awsClient";
+import { fetchNodeData, fetchBaselineBandwidth } from "./shared/awsClient";
 import { getCachedData, setCachedData } from "./shared/utils";
 
 interface Preferences {
@@ -155,9 +155,7 @@ function NodeDetailsComponent({
     const fetchBandwidth = async () => {
       setIsFetchingBandwidth(true);
       try {
-        console.log(`Fetching bandwidth for ${nodeType} in ${region}`);
-        const bandwidth = await fetchBaselineBandwidth(nodeType.replace("cache.", ""), region);
-        console.log(`Received bandwidth for ${nodeType}: ${bandwidth}`);
+        const bandwidth = await fetchBaselineBandwidth(nodeType, region);
         setBaselineBandwidth(bandwidth);
       } catch (error) {
         console.error(`Error fetching bandwidth for ${nodeType}:`, error);

@@ -47,12 +47,18 @@ function chunkArray<T>(array: T[], chunkSize: number): T[][] {
 
 const BASELINE_BANDWIDTH_CACHE_KEY = "baseline_bandwidth_data";
 
-export async function fetchBaselineBandwidth(instanceType: string, region: string): Promise<string | null> {
+export async function fetchBaselineBandwidth(
+  instanceType: string,
+  region: string
+): Promise<string | null> {
   console.log(`Fetching baseline bandwidth for ${instanceType} in ${region}`);
   const ec2Client = createEC2Client(region);
 
+  // Remove any prefixes like 'db.' or 'cache.'
+  const cleanInstanceType = instanceType.replace(/^(db\.|cache\.)/, "");
+
   const command = new DescribeInstanceTypesCommand({
-    InstanceTypes: [instanceType],
+    InstanceTypes: [cleanInstanceType],
   });
 
   try {
@@ -60,8 +66,10 @@ export async function fetchBaselineBandwidth(instanceType: string, region: strin
     
     if (response.InstanceTypes && response.InstanceTypes.length > 0) {
       const instanceTypeInfo = response.InstanceTypes[0];
-      if (instanceTypeInfo.NetworkInfo?.NetworkCards && instanceTypeInfo.NetworkInfo.NetworkCards.length > 0) {
-        const baselineBandwidth = instanceTypeInfo.NetworkInfo.NetworkCards[0].BaselineBandwidthInGbps;
+      if (instanceTypeInfo.NetworkInfo?.NetworkCards && 
+          instanceTypeInfo.NetworkInfo.NetworkCards.length > 0) {
+        const baselineBandwidth = 
+          instanceTypeInfo.NetworkInfo.NetworkCards[0].BaselineBandwidthInGbps;
         if (baselineBandwidth) {
           console.log(`Baseline bandwidth for ${instanceType}: ${baselineBandwidth} Gbps`);
           return `${baselineBandwidth} Gbps`;

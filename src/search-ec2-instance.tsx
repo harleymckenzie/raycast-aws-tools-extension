@@ -162,21 +162,19 @@ function InstanceDetailsComponent({
   const [isFetchingBandwidth, setIsFetchingBandwidth] = useState(true);
 
   useEffect(() => {
-    const fetchNetworkPerformance = async () => {
+    const fetchBandwidth = async () => {
       setIsFetchingBandwidth(true);
       try {
-        console.log(`Fetching network performance for ${instanceType} in ${region}`);
-        const performance = await fetchBaselineBandwidth(instanceType, region);
-        console.log(`Received network performance: ${performance}`);
-        setBaselineBandwidth(performance);
+        const bandwidth = await fetchBaselineBandwidth(instanceType, region);
+        setBaselineBandwidth(bandwidth);
       } catch (error) {
-        console.error(`Error fetching network performance for ${instanceType}:`, error);
+        console.error(`Error fetching bandwidth for ${instanceType}:`, error);
       } finally {
         setIsFetchingBandwidth(false);
       }
     };
 
-    fetchNetworkPerformance();
+    fetchBandwidth();
   }, [instanceType, region]);
 
   const { pricePerHour, memory, vcpu, processorType, storage, networkPerformance } = details;
@@ -184,11 +182,11 @@ function InstanceDetailsComponent({
   const dailyCost = hourlyCost * 24;
   const monthlyCost = dailyCost * 30;
 
-  const networkInfo = isFetchingBandwidth
+  const networkThroughput = isFetchingBandwidth
     ? "Fetching baseline bandwidth..."
     : baselineBandwidth || networkPerformance;
 
-  console.log('Rendering network info:', networkInfo);
+  console.log('Rendering network info:', networkThroughput);
 
   return (
     <List navigationTitle={`Details for ${instanceType}`}>
@@ -201,7 +199,7 @@ function InstanceDetailsComponent({
         <List.Item
           icon={Icon.Network}
           title="Network Performance"
-          accessories={[{ text: networkInfo }]}
+          accessories={[{ text: networkThroughput }]}
         />
       </List.Section>
       <List.Section title={`Pricing (${region})`}>
