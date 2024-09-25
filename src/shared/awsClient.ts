@@ -77,13 +77,14 @@ export async function fetchInstanceData(
   region: string,
   serviceCode: ServiceCode,
   filters: { Type: string; Field: string; Value: string }[],
-  setProgress?: (progress: { current: number; total: number }) => void,
+  setProgress?: (progress: { current: number; total: number | null; message: string }) => void,
   signal?: AbortSignal
 ): Promise<Record<string, any>> {
   console.log(`Starting to fetch ${serviceCode} instance data for region: ${region}`);
   const client = createPricingClient();
   const instanceData: Record<string, any> = {};
   let pageCount = 0;
+  let instanceCount = 0;
 
   const paginator = paginateGetProducts(
     { client },
@@ -122,12 +123,17 @@ export async function fetchInstanceData(
             pricePerHour: pricePerUnit,
             ...attributes,
           };
+          instanceCount++;
         }
       }
     }
 
-    setProgress?.({ current: pageCount, total: pageCount });
-    console.log(`Progress: ${pageCount} page(s) processed`);
+    setProgress?.({ 
+      current: pageCount, 
+      total: null, 
+      message: `Processed ${pageCount} pages, retrieved ${instanceCount} instance types` 
+    });
+    console.log(`Progress: ${pageCount} page(s) processed, ${instanceCount} instance types retrieved`);
   }
 
   console.log(`Finished fetching ${serviceCode} instance data. Total pages: ${pageCount}`);

@@ -69,6 +69,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
             { Type: "TERM_MATCH", Field: "operatingSystem", Value: "Linux" },
             { Type: "TERM_MATCH", Field: "tenancy", Value: "Shared" },
             { Type: "TERM_MATCH", Field: "capacitystatus", Value: "Used" },
+            { Type: "TERM_MATCH", Field: "preInstalledSw", Value: "NA" },
           ];
           const data = await fetchInstanceData(
             region,
@@ -196,7 +197,9 @@ function InstanceDetailsComponent({
 
   const networkThroughput = isFetchingBandwidth
     ? "Fetching baseline bandwidth..."
-    : baselineBandwidth || networkPerformance;
+    : baselineBandwidth
+    ? `${networkPerformance} | Baseline: ${baselineBandwidth}`
+    : networkPerformance;
 
   console.log('Rendering network info:', networkThroughput);
 
