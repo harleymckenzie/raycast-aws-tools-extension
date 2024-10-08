@@ -5,6 +5,7 @@
   "description": "A collection of tools to interact with AWS services.",
   "icon": "AWS.png",
   "author": "harleymckenzie",
+  "owner": "harleymckenzie",
   "categories": [
     "Developer Tools",
     "Productivity",
