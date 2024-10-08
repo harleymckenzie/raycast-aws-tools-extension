@@ -216,4 +216,3 @@ function DatabaseDetailsComponent({
     </List>
   );
 }
-
