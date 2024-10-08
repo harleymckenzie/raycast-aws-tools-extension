@@ -1,7 +1,7 @@
 // awsClient.ts
 
 import { PricingClient, GetProductsCommand } from "@aws-sdk/client-pricing";
-import { EC2Client, DescribeInstanceTypesCommand } from "@aws-sdk/client-ec2";
+import { EC2Client, DescribeInstanceTypesCommand, _InstanceType as EC2InstanceType } from "@aws-sdk/client-ec2";
 import { fromIni } from "@aws-sdk/credential-providers";
 import { getPreferenceValues } from "@raycast/api";
 import { paginateGetProducts } from "@aws-sdk/client-pricing";
@@ -46,7 +46,7 @@ export async function fetchBaselineBandwidth(
   const cleanInstanceType = instanceType.replace(/^(db\.|cache\.)/, "");
 
   const command = new DescribeInstanceTypesCommand({
-    InstanceTypes: [cleanInstanceType],
+    InstanceTypes: [cleanInstanceType as EC2InstanceType],
   });
 
   try {
@@ -90,7 +90,11 @@ export async function fetchInstanceData(
     { client },
     {
       ServiceCode: serviceCode,
-      Filters: filters,
+      Filters: filters.map(filter => ({
+        Type: "TERM_MATCH" as const,
+        Field: filter.Field,
+        Value: filter.Value,
+      })),
     }
   );
 
@@ -105,7 +109,7 @@ export async function fetchInstanceData(
 
     if (page.PriceList) {
       for (const priceItem of page.PriceList) {
-        const priceJSON = JSON.parse(priceItem);
+        const priceJSON = JSON.parse(priceItem.toString());
         const product = priceJSON.product;
         const attributes = product.attributes;
         const instanceType = attributes.instanceType;

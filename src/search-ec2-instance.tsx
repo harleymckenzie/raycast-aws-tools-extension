@@ -22,7 +22,7 @@ interface InstanceDetails {
   pricePerHour: number | null;
   memory: string;
   vcpu: string;
-  processorType: string;
+  physicalProcessor: string;
   storage: string;
   networkPerformance: string;
   baselineBandwidth?: string;
@@ -75,7 +75,10 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
             region,
             ServiceCode.EC2,
             filters,
-            setFetchProgress,
+            (progress) => setFetchProgress({
+              current: progress.current ?? 0,
+              total: progress.total ?? 0
+            }),
             abortControllerRef.current.signal
           );
           console.log(`Fetched ${Object.keys(data).length} instance types`);
@@ -190,7 +193,8 @@ function InstanceDetailsComponent({
     fetchBandwidth();
   }, [instanceType, region]);
 
-  const { pricePerHour, memory, vcpu, processorType, storage, networkPerformance } = details;
+  console.log('Details:', details);
+  const { pricePerHour, memory, vcpu, physicalProcessor, storage, networkPerformance } = details;
   const hourlyCost = pricePerHour ?? 0;
   const dailyCost = hourlyCost * 24;
   const monthlyCost = dailyCost * 30;
@@ -208,7 +212,7 @@ function InstanceDetailsComponent({
       <List.Section title="Instance Details">
         <List.Item icon={Icon.Monitor} title="Instance Type" accessories={[{ text: instanceType }]} />
         <List.Item icon={Icon.MemoryChip} title="vCPU" accessories={[{ text: `${vcpu} vCPU` }]} />
-        <List.Item icon={Icon.MemoryChip} title="Processor Type" accessories={[{ text: processorType }]} />
+        <List.Item icon={Icon.MemoryChip} title="Processor Type" accessories={[{ text: physicalProcessor }]} />
         <List.Item icon={Icon.MemoryStick} title="Memory" accessories={[{ text: memory }]} />
         <List.Item icon={Icon.HardDrive} title="Storage" accessories={[{ text: storage }]} />
         <List.Item
