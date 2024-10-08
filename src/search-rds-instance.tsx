@@ -20,14 +20,14 @@ interface Preferences {
 
 interface DatabaseDetails {
   pricePerHour: number | null;
-  engine: string;
+  databaseEngine: string;
   databaseEdition: string;
   deploymentOption: string;
   instanceType: string;
   vcpu: string;
   memory: string;
   storage: string;
-  processorType: string;
+  physicalProcessor: string;
   networkPerformance: string;
 }
 
@@ -120,7 +120,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
             icon={Icon.MemoryChip}
             accessories={
               info.pricePerHour !== null
-                ? [{ text: `${info.engine} | $${info.pricePerHour.toFixed(4)}/hr` }]
+                ? [{ text: `${info.databaseEngine} | $${info.pricePerHour.toFixed(4)}/hr` }]
                 : [{ text: "Price N/A" }]
             }
             actions={
@@ -167,14 +167,14 @@ function DatabaseDetailsComponent({
 
   const {
     pricePerHour,
-    engine,
+    databaseEngine,
     databaseEdition,
     deploymentOption,
     instanceType,
     vcpu,
     memory,
     storage,
-    processorType,
+    physicalProcessor,
     networkPerformance,
   } = details;
   const hourlyCost = pricePerHour ?? 0;
@@ -191,9 +191,9 @@ function DatabaseDetailsComponent({
     <List navigationTitle={`Details for ${instanceType}`}>
       <List.Section title="Instance Details">
         <List.Item icon={Icon.Monitor} title="Instance Type" accessories={[{ text: instanceType }]} />
-        <List.Item icon={Icon.Terminal} title="Engine" accessories={[{ text: engine }]} />
+        <List.Item icon={Icon.Terminal} title="Engine" accessories={[{ text: databaseEngine }]} />
         <List.Item icon={Icon.MemoryChip} title="vCPU" accessories={[{ text: `${vcpu} vCPU` }]} />
-        <List.Item icon={Icon.MemoryChip} title="Processor Type" accessories={[{ text: processorType }]} />
+        <List.Item icon={Icon.MemoryChip} title="Processor Type" accessories={[{ text: physicalProcessor }]} />
         <List.Item icon={Icon.MemoryStick} title="Memory" accessories={[{ text: memory }]} />
         <List.Item icon={Icon.HardDrive} title="Storage" accessories={[{ text: storage }]} />
         <List.Item
