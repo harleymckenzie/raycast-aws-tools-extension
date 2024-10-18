@@ -1,7 +1,11 @@
 // awsClient.ts
 
 import { PricingClient, GetProductsCommand } from "@aws-sdk/client-pricing";
-import { EC2Client, DescribeInstanceTypesCommand, _InstanceType as EC2InstanceType } from "@aws-sdk/client-ec2";
+import {
+  EC2Client,
+  DescribeInstanceTypesCommand,
+  _InstanceType as EC2InstanceType,
+} from "@aws-sdk/client-ec2";
 import { fromIni } from "@aws-sdk/credential-providers";
 import { getPreferenceValues } from "@raycast/api";
 import { paginateGetProducts } from "@aws-sdk/client-pricing";
@@ -13,34 +17,46 @@ interface Preferences {
 export enum ServiceCode {
   EC2 = "AmazonEC2",
   RDS = "AmazonRDS",
-  ElastiCache = "AmazonElastiCache"
+  ElastiCache = "AmazonElastiCache",
 }
 
-function getCredentials() {
-  const { awsProfile } = getPreferenceValues<Preferences>();
-  return fromIni({ profile: awsProfile });
+export async function getProfiles(): Promise<{ id: string; name: string }[]> {
+  try {
+    const profiles = await parseIni();
+    return Object.keys(profiles).map(profile => ({
+      id: profile,
+      name: profile
+    }));
+  } catch (error) {
+    console.error("Error fetching AWS profiles:", error);
+    return [];
+  }
 }
 
-export function createPricingClient() {
+function getCredentials(profile: string) {
+  return fromIni({ profile: profile });
+}
+
+export function createPricingClient(profile: string) {
   return new PricingClient({
     region: "us-east-1", // Pricing API is only available in us-east-1
-    credentials: getCredentials(),
+    credentials: getCredentials(profile),
   });
 }
 
-export function createEC2Client(region: string) {
+export function createEC2Client(profile: string, region: string) {
   return new EC2Client({
     region,
-    credentials: getCredentials(),
+    credentials: getCredentials(profile),
   });
 }
 
-export async function fetchBaselineBandwidth(
-  instanceType: string,
-  region: string
-): Promise<string | null> {
+export async function fetchBaselineBandwidth(profile: string, instanceType: string, region: string): Promise<string | null> {
   console.log(`Fetching baseline bandwidth for ${instanceType} in ${region}`);
-  const ec2Client = createEC2Client(region);
+  const { awsProfile, defaultRegion } = getPreferenceValues<Preferences>();
+  const profileToUse = profile || awsProfile;
+  const regionToUse = region || defaultRegion;
+  const ec2Client = createEC2Client(profileToUse, regionToUse);
 
   // Remove any prefixes like 'db.' or 'cache.'
   const cleanInstanceType = instanceType.replace(/^(db\.|cache\.)/, "");
@@ -51,20 +67,18 @@ export async function fetchBaselineBandwidth(
 
   try {
     const response = await ec2Client.send(command);
-    
+
     if (response.InstanceTypes && response.InstanceTypes.length > 0) {
       const instanceTypeInfo = response.InstanceTypes[0];
-      if (instanceTypeInfo.NetworkInfo?.NetworkCards && 
-          instanceTypeInfo.NetworkInfo.NetworkCards.length > 0) {
-        const baselineBandwidth = 
-          instanceTypeInfo.NetworkInfo.NetworkCards[0].BaselineBandwidthInGbps;
+      if (instanceTypeInfo.NetworkInfo?.NetworkCards && instanceTypeInfo.NetworkInfo.NetworkCards.length > 0) {
+        const baselineBandwidth = instanceTypeInfo.NetworkInfo.NetworkCards[0].BaselineBandwidthInGbps;
         if (baselineBandwidth) {
           console.log(`Baseline bandwidth for ${instanceType}: ${baselineBandwidth} Gbps`);
           return `${baselineBandwidth} Gbps`;
         }
       }
     }
-    
+
     console.log(`No baseline bandwidth found for ${instanceType}`);
   } catch (error) {
     console.error(`Error fetching baseline bandwidth for ${instanceType}:`, error);
@@ -78,7 +92,7 @@ export async function fetchInstanceData(
   serviceCode: ServiceCode,
   filters: { Type: string; Field: string; Value: string }[],
   setProgress?: (progress: { current: number; total: number | null; message: string }) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<Record<string, any>> {
   console.log(`Starting to fetch ${serviceCode} instance data for region: ${region}`);
   const client = createPricingClient();
@@ -90,18 +104,18 @@ export async function fetchInstanceData(
     { client },
     {
       ServiceCode: serviceCode,
-      Filters: filters.map(filter => ({
+      Filters: filters.map((filter) => ({
         Type: "TERM_MATCH" as const,
         Field: filter.Field,
         Value: filter.Value,
       })),
-    }
+    },
   );
 
   for await (const page of paginator) {
     if (signal?.aborted) {
-      console.log('Fetch aborted');
-      throw new Error('Fetch aborted');
+      console.log("Fetch aborted");
+      throw new Error("Fetch aborted");
     }
 
     pageCount++;
@@ -132,10 +146,10 @@ export async function fetchInstanceData(
       }
     }
 
-    setProgress?.({ 
-      current: pageCount, 
-      total: null, 
-      message: `Processed ${pageCount} pages, retrieved ${instanceCount} instance types` 
+    setProgress?.({
+      current: pageCount,
+      total: null,
+      message: `Processed ${pageCount} pages, retrieved ${instanceCount} instance types`,
     });
     console.log(`Progress: ${pageCount} page(s) processed, ${instanceCount} instance types retrieved`);
   }
