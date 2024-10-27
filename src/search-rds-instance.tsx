@@ -24,6 +24,7 @@ interface DatabaseDetails {
   databaseEdition: string;
   deploymentOption: string;
   instanceType: string;
+  usagetype: string;
   vcpu: string;
   memory: string;
   storage: string;
@@ -111,12 +112,22 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
         />
       ) : error ? (
         <List.Item title="Error" subtitle={error} icon={Icon.ExclamationMark} />
+      ) : filteredDatabases.length === 0 ? (
+        <List.EmptyView
+          icon={Icon.MagnifyingGlass}
+          title="No matching instances found"
+          description="Try adjusting your search term"
+        />
       ) : (
         filteredDatabases.map(([key, info]) => (
           <List.Item
             key={key}
             title={info.instanceType}
-            subtitle={`${info.vcpu} vCPU | ${info.memory} RAM`}
+            subtitle={
+              info.usagetype.includes("IOOptimized")
+                ? `${info.vcpu} vCPU | ${info.memory} RAM | I/O-Optimized`
+                : `${info.vcpu} vCPU | ${info.memory} RAM`
+            }
             icon={Icon.MemoryChip}
             accessories={
               info.pricePerHour !== null
@@ -168,8 +179,6 @@ function DatabaseDetailsComponent({
   const {
     pricePerHour,
     databaseEngine,
-    databaseEdition,
-    deploymentOption,
     instanceType,
     vcpu,
     memory,

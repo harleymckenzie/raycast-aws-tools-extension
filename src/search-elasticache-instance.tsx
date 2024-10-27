@@ -23,11 +23,11 @@ interface NodeDetails {
   memory: string;
   networkPerformance: string;
   vcpu: string;
-  nodeType: string;
+  instanceType: string;
 }
 
 interface CommandArguments {
-  nodeType?: string;
+  instanceType?: string;
   region?: string;
 }
 
@@ -38,7 +38,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
   const [nodeData, setNodeData] = useState<Record<string, NodeDetails>>({});
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [searchText, setSearchText] = useState(props.arguments.nodeType || "");
+  const [searchText, setSearchText] = useState(props.arguments.instanceType || "");
   const [loadingStatus, setLoadingStatus] = useState("Initializing...");
 
   const region = props.arguments.region || defaultRegion;
@@ -51,11 +51,9 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
         const cacheKeyWithRegion = `${CACHE_KEY}_${region}`;
         const cachedData = await getCachedData<Record<string, NodeDetails>>(cacheKeyWithRegion, 1);
         if (cachedData) {
-          console.log("Using cached ElastiCache node data");
           setLoadingStatus("Loading cached data...");
           setNodeData(cachedData);
         } else {
-          console.log("Fetching fresh ElastiCache node data");
           setLoadingStatus("Fetching node data from AWS...");
           const filters = [
             { Type: "TERM_MATCH", Field: "regionCode", Value: region },
@@ -85,7 +83,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
 
   const filteredNodes = useMemo(() => {
     return Object.entries(nodeData)
-      .filter(([type]) => type.toLowerCase().includes(searchText.toLowerCase()))
+      .filter(([_, info]) => info.instanceType.toLowerCase().includes(searchText.toLowerCase()))
       .sort(([a], [b]) => a.localeCompare(b));
   }, [nodeData, searchText]);
 
@@ -111,10 +109,10 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
           description="Try adjusting your search term"
         />
       ) : (
-        filteredNodes.map(([nodeType, info]) => (
+        filteredNodes.map(([key, info]) => (
           <List.Item
-            key={nodeType}
-            title={nodeType}
+            key={key}
+            title={info.instanceType}
             subtitle={`${info.vcpu} vCPU | ${info.memory} Memory`}
             icon={Icon.MemoryChip}
             accessories={
@@ -128,7 +126,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
                   title="View Details"
                   target={
                     <NodeDetailsComponent
-                      nodeType={nodeType}
+                      key={key}
                       details={info}
                       region={region}
                     />
@@ -144,11 +142,9 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
 }
 
 function NodeDetailsComponent({
-  nodeType,
   details,
   region,
 }: {
-  nodeType: string;
   details: NodeDetails;
   region: string;
 }) {
@@ -159,17 +155,18 @@ function NodeDetailsComponent({
     const fetchBandwidth = async () => {
       setIsFetchingBandwidth(true);
       try {
-        const bandwidth = await fetchBaselineBandwidth(nodeType, region);
+        console.log(`Fetching bandwidth for ${details.instanceType} in ${region}`);
+        const bandwidth = await fetchBaselineBandwidth(details.instanceType, region);
         setBaselineBandwidth(bandwidth);
       } catch (error) {
-        console.error(`Error fetching bandwidth for ${nodeType}:`, error);
+        console.error(`Error fetching bandwidth for ${details.instanceType}:`, error);
       } finally {
         setIsFetchingBandwidth(false);
       }
     };
 
     fetchBandwidth();
-  }, [nodeType, region]);
+  }, [details.instanceType, region]);
 
   const { pricePerHour, memory, networkPerformance, vcpu } = details;
   const hourlyCost = pricePerHour ?? 0;
@@ -183,10 +180,10 @@ function NodeDetailsComponent({
     : networkPerformance;
 
   return (
-    <List navigationTitle={`Details for ${nodeType}`}>
+    <List navigationTitle={`Details for ${details.instanceType}`}>
       <List.Section title="Node Details">
-        <List.Item icon={Icon.Monitor} title="Node Type" accessories={[{ text: nodeType }]} />
-        <List.Item icon={Icon.MemoryChip} title="vCPU" accessories={[{ text: `${vcpu} vCPU` }]} />
+        <List.Item icon={Icon.Monitor} title="Node Type" accessories={[{ text: details.instanceType }]} />
+        <List.Item icon={Icon.MemoryChip} title="vCPU" accessories={[{ text: `${details.vcpu} vCPU` }]} />
         <List.Item icon={Icon.MemoryStick} title="Memory" accessories={[{ text: memory }]} />
         <List.Item icon={Icon.Network} title="Network Performance" accessories={[{ text: networkThroughput }]} />
       </List.Section>
