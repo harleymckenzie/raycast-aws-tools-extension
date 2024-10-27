@@ -1,56 +1,11 @@
 import { useState, useEffect } from "react";
+import { loadSharedConfigFiles } from "@aws-sdk/shared-ini-file-loader";
 import { List } from "@raycast/api";
 import { useCachedState } from "@raycast/utils";
-import { loadSharedConfigFiles } from "@aws-sdk/shared-ini-file-loader";
 
-export type ProfileOption = {
+export interface ProfileOption {
   name: string;
   region?: string;
-  source_profile?: string;
-  sso_start_url?: string;
-  sso_account_id?: string;
-  sso_role_name?: string;
-  sso_session?: string;
-};
-
-export function ProfileDropdown({ onProfileChange }: { onProfileChange: (newProfile: string) => void }) {
-  const [selectedProfile, setSelectedProfile] = useCachedState<string>("aws_profile");
-  const profileOptions = useProfileOptions();
-
-  useEffect(() => {
-    const isSelectedProfileInvalid =
-      selectedProfile && !profileOptions.some((profile) => profile.name === selectedProfile);
-
-    if (!selectedProfile || isSelectedProfileInvalid) {
-      setSelectedProfile(profileOptions[0]?.name);
-    }
-  }, [profileOptions, selectedProfile]);
-
-  useEffect(() => {
-    if (selectedProfile) {
-      onProfileChange(selectedProfile);
-    }
-  }, [selectedProfile, onProfileChange]);
-
-  if (!profileOptions || profileOptions.length < 2) {
-    return null;
-  }
-
-  return (
-    <List.Dropdown
-      tooltip="Select AWS Profile"
-      value={selectedProfile}
-      onChange={setSelectedProfile}
-    >
-      {profileOptions.map((profile) => (
-        <List.Dropdown.Item
-          key={profile.name}
-          value={profile.name}
-          title={profile.name}
-        />
-      ))}
-    </List.Dropdown>
-  );
 }
 
 export const useProfileOptions = (): ProfileOption[] => {
@@ -62,10 +17,10 @@ export const useProfileOptions = (): ProfileOption[] => {
         const { configFile, credentialsFile } = await loadSharedConfigFiles();
         const profiles = Object.keys(configFile).length > 0 ? configFile : credentialsFile;
 
-        const options = Object.entries(profiles).map(([name, config]) => {
-          const region = config.region;
-          return { ...config, region, name };
-        });
+        const options = Object.entries(profiles).map(([name, config]) => ({
+          name,
+          region: config.region,
+        }));
 
         setProfileOptions(options);
       } catch (error) {
@@ -77,4 +32,38 @@ export const useProfileOptions = (): ProfileOption[] => {
   }, []);
 
   return profileOptions;
+};
+
+export const useAwsProfileDropdown = (
+  defaultProfile: string,
+  onProfileChange: (newProfile: string) => void
+) => {
+  const [selectedProfile, setSelectedProfile] = useCachedState<string>(
+    "aws_profile",
+    defaultProfile
+  );
+  const profileOptions = useProfileOptions();
+
+  const handleProfileChange = (newProfile: string) => {
+    setSelectedProfile(newProfile);
+    onProfileChange(newProfile);
+  };
+
+  const dropdown = (
+    <List.Dropdown
+      tooltip="Select AWS Profile"
+      onChange={handleProfileChange}
+      value={selectedProfile}
+    >
+      {profileOptions.map((profile) => (
+        <List.Dropdown.Item
+          key={profile.name}
+          value={profile.name}
+          title={profile.name}
+        />
+      ))}
+    </List.Dropdown>
+  );
+
+  return { selectedProfile, dropdown };
 };

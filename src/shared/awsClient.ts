@@ -6,7 +6,7 @@ import {
   DescribeInstanceTypesCommand,
   _InstanceType as EC2InstanceType,
 } from "@aws-sdk/client-ec2";
-import { fromIni } from "@aws-sdk/credential-providers";
+import { fromIni } from "@aws-sdk/credential-provider-ini";
 import { getPreferenceValues } from "@raycast/api";
 import { paginateGetProducts } from "@aws-sdk/client-pricing";
 
@@ -33,21 +33,18 @@ export async function getProfiles(): Promise<{ id: string; name: string }[]> {
   }
 }
 
-function getCredentials(profile: string) {
-  return fromIni({ profile: profile });
-}
-
 export function createPricingClient(profile: string) {
   return new PricingClient({
     region: "us-east-1", // Pricing API is only available in us-east-1
-    credentials: getCredentials(profile),
+    credentials: fromIni({ profile }),
   });
 }
 
-export function createEC2Client(profile: string, region: string) {
+export function createEC2Client(profile: string, region: string): EC2Client {
   return new EC2Client({
     region,
-    credentials: getCredentials(profile),
+    credentials: fromIni({ profile }),
+    maxAttempts: 3,
   });
 }
 

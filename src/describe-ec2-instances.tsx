@@ -1,53 +1,62 @@
-import { useState, useEffect, useCallback } from "react";
-import { Color, Icon, List, ActionPanel, Action, getPreferenceValues, Detail } from "@raycast/api";
-import { DescribeInstancesCommand, Instance } from "@aws-sdk/client-ec2";
+import { useState, useCallback, useEffect } from "react";
+import {
+  Color,
+  Icon,
+  List,
+  ActionPanel,
+  Action,
+  getPreferenceValues,
+  Detail,
+} from "@raycast/api";
+import { DescribeInstancesCommand } from "@aws-sdk/client-ec2";
 import { createEC2Client } from "./shared/awsClient";
-import { useCachedState, useCachedPromise } from "@raycast/utils";
-import { loadSharedConfigFiles } from "@aws-sdk/shared-ini-file-loader";
+import { useAwsProfileDropdown, useProfileOptions } from "./shared/awsProfileSelection";
 
 interface Preferences {
   awsProfile: string;
+  defaultRegion: string;
+  defaultTerminal: string;
 }
 
 export default function Command() {
-  const { awsProfile, defaultRegion, defaultTerminal } = getPreferenceValues<Preferences>();
-  const [selectedProfile, setSelectedProfile] = useCachedState<string>("aws_profile", awsProfile);
+  const { awsProfile, defaultRegion, defaultTerminal } =
+    getPreferenceValues<Preferences>();
   const [region, setRegion] = useState(defaultRegion);
-  
-  const { data: instances, isLoading, revalidate } = useCachedPromise(
-    async (profile: string, region: string) => {
-      return await describeEC2Instances(profile, region);
-    },
-    [selectedProfile, region]
-  );
-
   const profileOptions = useProfileOptions();
 
-  const handleProfileChange = useCallback((newProfile: string) => {
-    setSelectedProfile(newProfile);
-    revalidate();
-  }, [setSelectedProfile, revalidate]);
+  const { selectedProfile, dropdown } = useAwsProfileDropdown(
+    awsProfile,
+    (newProfile: string) => {
+      const newRegion = profileOptions.find(p => p.name === newProfile)?.region || defaultRegion;
+      setRegion(newRegion);
+    }
+  );
+
+  const [instances, setInstances] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchInstances = async () => {
+      setIsLoading(true);
+      try {
+        const data = await describeEC2Instances(selectedProfile, region);
+        setInstances(data);
+      } catch (error) {
+        console.error("Error fetching instances:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchInstances();
+  }, [selectedProfile, region]);
 
   const consoleUrl = `https://${region}.console.aws.amazon.com/ec2/home?region=${region}#InstanceDetails:instanceId=`;
 
   return (
-    <List 
-      isLoading={isLoading} 
-      searchBarAccessory={
-        <List.Dropdown 
-          tooltip="Select AWS Profile" 
-          onChange={handleProfileChange}
-          value={selectedProfile}
-        >
-          {profileOptions.map((profile) => (
-            <List.Dropdown.Item
-              key={profile.name}
-              value={profile.name}
-              title={profile.name}
-            />
-          ))}
-        </List.Dropdown>
-      } 
+    <List
+      isLoading={isLoading}
+      searchBarAccessory={dropdown}
       isShowingDetail
     >
       {instances?.map((instance) => (
@@ -102,19 +111,14 @@ export default function Command() {
           }
           actions={
             <ActionPanel title="EC2 Actions">
-              <Action.Push title="View Details" target={<InstanceDetailsComponent />} />
+              <Action.Push
+                title="View Details"
+                target={<InstanceDetailsComponent instance={instance} />}
+              />
               <Action.OpenInBrowser title="Open in Browser" url={consoleUrl + instance.InstanceId} />
-              <ActionPanel.Submenu title="Connect" icon={Icon.Ellipsis}>
-                <Action.Open
-                  title="Connect via SSH"
-                  icon={Icon.Terminal}
-                  target={`ssh ${instance.PublicIpAddress}`}
-                  application={defaultTerminal}
-                />
-                <Action.Paste title="Paste SSH Command" content={`ssh ${instance.PublicIpAddress}`} />
-                <Action.CopyToClipboard title="Copy SSH Command" content={`ssh ${instance.PublicIpAddress}`} />
-              </ActionPanel.Submenu>
               <Action.CopyToClipboard title="Copy Public IP Address" content={instance.PublicIpAddress} />
+              <Action.Paste title="Paste SSH Command" content={`ssh ${instance.PublicIpAddress}`} />
+              <Action.CopyToClipboard title="Copy SSH Command" content={`ssh ${instance.PublicIpAddress}`} />
               <Action.CopyToClipboard title="Copy Instance ID" content={instance.InstanceId} />
             </ActionPanel>
           }
@@ -124,74 +128,40 @@ export default function Command() {
   );
 }
 
-function ProfileDropdown({ onProfileChange }: { onProfileChange: (newProfile: string) => void }) {
-  const [selectedProfile, setSelectedProfile] = useCachedState<string>("aws_profile");
-  const profileOptions = useProfileOptions();
-
-  useEffect(() => {
-    const isSelectedProfileInvalid =
-      selectedProfile && !profileOptions.some((profile) => profile.name === selectedProfile);
-
-    if (!selectedProfile || isSelectedProfileInvalid) {
-      setSelectedProfile(profileOptions[0]?.name);
-    }
-  }, [profileOptions, selectedProfile]);
-
-  useEffect(() => {
-    if (selectedProfile) {
-      onProfileChange(selectedProfile);
-    }
-  }, [selectedProfile, onProfileChange]);
-
-  if (!profileOptions || profileOptions.length < 2) {
-    return null;
-  }
-
-  return (
-    <List.Dropdown
-      tooltip="Select AWS Profile"
-      value={selectedProfile}
-      onChange={setSelectedProfile}
-    >
-      {profileOptions.map((profile) => (
-        <List.Dropdown.Item
-          key={profile.name}
-          value={profile.name}
-          title={profile.name}
-        />
-      ))}
-    </List.Dropdown>
-  );
+interface InstanceDetailsProps {
+  instance: any; // Replace 'any' with a proper type if available
 }
 
-const useProfileOptions = (): ProfileOption[] => {
-  const [profileOptions, setProfileOptions] = useState<ProfileOption[]>([]);
-
-  useEffect(() => {
-    const fetchProfileOptions = async () => {
-      try {
-        const { configFile, credentialsFile } = await loadSharedConfigFiles();
-        const profiles = Object.keys(configFile).length > 0 ? configFile : credentialsFile;
-
-        const options = Object.entries(profiles).map(([name, config]) => {
-          const region = config.region;
-          return { ...config, region, name };
-        });
-
-        setProfileOptions(options);
-      } catch (error) {
-        console.error("Error loading AWS profiles:", error);
-      }
-    };
-
-    fetchProfileOptions();
-  }, []);
-
-  return profileOptions;
-};
-
-function InstanceDetailsComponent() {
-  return <Detail navigationTitle="Instance Details" markdown={`# Instance Details`} />;
+function InstanceDetailsComponent({ instance }: InstanceDetailsProps) {
+  return (
+    <List navigationTitle="Instance Details">
+      <List.Section title="Instance Details">
+        <List.Item
+          title="Name"
+          accessories={[{ text: instance?.Tags?.find((tag) => tag.Key === "Name")?.Value ?? "N/A" }]}
+        />
+        <List.Item title="Instance ID" accessories={[{ text: instance?.InstanceId ?? "N/A" }]} />
+        <List.Item title="Instance Type" accessories={[{ text: instance?.InstanceType ?? "N/A" }]} />
+        <List.Item title="State" accessories={[{ text: instance?.State?.Name ?? "N/A" }]} />
+        <List.Item title="Public IP" accessories={[{ text: instance?.PublicIpAddress ?? "N/A" }]} />
+        <List.Item title="Private IP" accessories={[{ text: instance?.PrivateIpAddress ?? "N/A" }]} />
+        <List.Item title="VPC ID" accessories={[{ text: instance?.VpcId ?? "N/A" }]} />
+        <List.Item
+          title="Availability Zone"
+          subtitle={instance?.Placement?.AvailabilityZone ?? "N/A"}
+        />
+      </List.Section>
+      <List.Section title="Tags">
+        {instance?.Tags?.map((tag) => (
+          <List.Item
+            key={tag.Key}
+            title={tag.Key}
+            subtitle={tag.Value}
+          />
+        )) ?? <List.Item title="No tags" subtitle="This instance has no tags" />}
+      </List.Section>
+    </List>
+  );
 }
 
 export async function describeEC2Instances(profile: string, region: string) {
