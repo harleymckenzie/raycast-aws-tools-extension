@@ -120,7 +120,7 @@
       "mode": "view",
       "arguments": [
         {
-          "name": "nodeType",
+          "name": "instanceType",
           "type": "text",
           "placeholder": "Node Type",
           "required": false

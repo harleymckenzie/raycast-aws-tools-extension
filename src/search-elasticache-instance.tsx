@@ -9,10 +9,11 @@ import {
   Icon,
   ActionPanel,
   Action,
-} from "@raycast/api";
-import { useEffect, useState, useMemo } from "react";
-import { fetchBaselineBandwidth, fetchInstanceData, ServiceCode } from "./shared/awsClient";
-import { getCachedData, setCachedData } from "./shared/utils";
+} from '@raycast/api';
+import { useState, useMemo } from 'react';
+import { ServiceCode } from './shared/awsClient';
+import { useAWSInstanceData, useBaselineBandwidth } from './shared/hooks';
+import { calculateCosts, getNetworkThroughput } from './shared/utils';
 
 interface Preferences {
   defaultRegion: string;
@@ -31,56 +32,24 @@ interface CommandArguments {
   region?: string;
 }
 
-const CACHE_KEY = "elasticache_node_data";
+const CACHE_KEY = 'elasticache_node_data';
 
 export default function Command(props: LaunchProps<{ arguments: CommandArguments }>) {
   const { defaultRegion } = getPreferenceValues<Preferences>();
-  const [nodeData, setNodeData] = useState<Record<string, NodeDetails>>({});
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [searchText, setSearchText] = useState(props.arguments.instanceType || "");
-  const [loadingStatus, setLoadingStatus] = useState("Initializing...");
-
+  const [searchText, setSearchText] = useState(props.arguments.instanceType || '');
   const region = props.arguments.region || defaultRegion;
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      setLoadingStatus("Checking cache...");
-      try {
-        const cacheKeyWithRegion = `${CACHE_KEY}_${region}`;
-        const cachedData = await getCachedData<Record<string, NodeDetails>>(cacheKeyWithRegion, 1);
-        if (cachedData) {
-          setLoadingStatus("Loading cached data...");
-          setNodeData(cachedData);
-        } else {
-          setLoadingStatus("Fetching node data from AWS...");
-          const filters = [
-            { Type: "TERM_MATCH", Field: "regionCode", Value: region },
-            { Type: "TERM_MATCH", Field: "cacheEngine", Value: "Redis" },
-          ];
-          const data = await fetchInstanceData(region, ServiceCode.ElastiCache, filters);
-          setNodeData(data);
-          setLoadingStatus("Populating cache...");
-          await setCachedData(cacheKeyWithRegion, 1, data);
-        }
-      } catch (error) {
-        console.error("Error in fetchData:", error);
-        const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-        setError(errorMessage);
-        await showToast({
-          style: Toast.Style.Failure,
-          title: "Error",
-          message: errorMessage,
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  const filters = [
+    { Type: 'TERM_MATCH', Field: 'regionCode', Value: region },
+    { Type: 'TERM_MATCH', Field: 'cacheEngine', Value: 'Redis' },
+  ];
 
-    fetchData();
-  }, [region]);
-
+  const { instanceData: nodeData, error, isLoading, loadingStatus } = useAWSInstanceData<NodeDetails>({
+    region,
+    serviceCode: ServiceCode.ElastiCache,
+    cacheKey: CACHE_KEY,
+    filters,
+  });
 
   const filteredInstances = useMemo(() => {
     return Object.entries(nodeData)
@@ -119,19 +88,13 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
             accessories={
               info.pricePerHour !== null
                 ? [{ text: `$${info.pricePerHour.toFixed(4)}/hr` }]
-                : [{ text: "Price N/A" }]
+                : [{ text: 'Price N/A' }]
             }
             actions={
               <ActionPanel>
                 <Action.Push
                   title="View Details"
-                  target={
-                    <NodeDetailsComponent
-                      key={key}
-                      details={info}
-                      region={region}
-                    />
-                  }
+                  target={<NodeDetailsComponent key={key} details={info} region={region} />}
                 />
               </ActionPanel>
             }
@@ -142,43 +105,12 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
   );
 }
 
-function NodeDetailsComponent({
-  details,
-  region,
-}: {
-  details: NodeDetails;
-  region: string;
-}) {
-  const [baselineBandwidth, setBaselineBandwidth] = useState<string | null>(null);
-  const [isFetchingBandwidth, setIsFetchingBandwidth] = useState(true);
-
-  useEffect(() => {
-    const fetchBandwidth = async () => {
-      setIsFetchingBandwidth(true);
-      try {
-        console.log(`Fetching bandwidth for ${details.instanceType} in ${region}`);
-        const bandwidth = await fetchBaselineBandwidth(details.instanceType, region);
-        setBaselineBandwidth(bandwidth);
-      } catch (error) {
-        console.error(`Error fetching bandwidth for ${details.instanceType}:`, error);
-      } finally {
-        setIsFetchingBandwidth(false);
-      }
-    };
-
-    fetchBandwidth();
-  }, [details.instanceType, region]);
-
+function NodeDetailsComponent({ details, region }: { details: NodeDetails; region: string }) {
+  const { baselineBandwidth, isFetchingBandwidth } = useBaselineBandwidth(details.instanceType, region);
   const { pricePerHour, memory, networkPerformance, vcpu } = details;
-  const hourlyCost = pricePerHour ?? 0;
-  const dailyCost = hourlyCost * 24;
-  const monthlyCost = hourlyCost * 730; // More accurate monthly estimation
+  const { hourlyCost, dailyCost, monthlyCost } = calculateCosts(pricePerHour);
 
-  const networkThroughput = isFetchingBandwidth
-    ? "Fetching baseline bandwidth..."
-    : baselineBandwidth
-    ? `${networkPerformance} | Baseline: ${baselineBandwidth}`
-    : networkPerformance;
+  const networkThroughput = getNetworkThroughput(isFetchingBandwidth, baselineBandwidth, networkPerformance);
 
   return (
     <List navigationTitle={`Details for ${details.instanceType}`}>

@@ -28,3 +28,25 @@ export async function setCachedData<T>(key: string, version: number, data: T): P
     console.error("Error setting cached data:", error);
   }
 }
+
+export function calculateCosts(pricePerHour: number | null) {
+  const hourlyCost = pricePerHour ?? 0;
+  const dailyCost = hourlyCost * 24;
+  const monthlyCost = hourlyCost * 730; // Assuming 730 hours in a month
+  return { hourlyCost, dailyCost, monthlyCost };
+}
+
+
+export function getNetworkThroughput(
+  isFetchingBandwidth: boolean,
+  baselineBandwidth: string | null,
+  networkPerformance: string
+): string {
+  if (isFetchingBandwidth) {
+    return 'Fetching baseline bandwidth...';
+  } else if (baselineBandwidth) {
+    return `${networkPerformance} | Baseline: ${baselineBandwidth}`;
+  } else {
+    return networkPerformance;
+  }
+}

@@ -9,10 +9,11 @@ import {
   Icon,
   ActionPanel,
   Action,
-} from "@raycast/api";
-import { useState, useEffect, useRef, useMemo } from "react";
-import { fetchInstanceData, fetchBaselineBandwidth, ServiceCode } from "./shared/awsClient";
-import { getCachedData, setCachedData } from "./shared/utils";
+} from '@raycast/api';
+import { useState, useMemo } from 'react';
+import { ServiceCode } from './shared/awsClient';
+import { useAWSInstanceData, useBaselineBandwidth } from './shared/hooks';
+import { calculateCosts, getNetworkThroughput } from './shared/utils';
 
 interface Preferences {
   defaultRegion: string;
@@ -34,87 +35,27 @@ interface CommandArguments {
   region?: string;
 }
 
-const CACHE_KEY = "ec2_instance_data";
+const CACHE_KEY = 'ec2_instance_data';
 
 export default function Command(props: LaunchProps<{ arguments: CommandArguments }>) {
   const { defaultRegion } = getPreferenceValues<Preferences>();
-  const [instanceData, setInstanceData] = useState<Record<string, InstanceDetails>>({});
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [searchText, setSearchText] = useState(props.arguments.instanceType || "");
-  const [loadingStatus, setLoadingStatus] = useState("Initializing...");
-  const [fetchProgress, setFetchProgress] = useState({ current: 0, total: 0 });
-  const abortControllerRef = useRef<AbortController | null>(null);
-
+  const [searchText, setSearchText] = useState(props.arguments.instanceType || '');
   const region = props.arguments.region || defaultRegion;
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      setLoadingStatus("Checking cache...");
-      abortControllerRef.current = new AbortController();
+  const filters = [
+    { Type: 'TERM_MATCH', Field: 'regionCode', Value: region },
+    { Type: 'TERM_MATCH', Field: 'operatingSystem', Value: 'Linux' },
+    { Type: 'TERM_MATCH', Field: 'tenancy', Value: 'Shared' },
+    { Type: 'TERM_MATCH', Field: 'capacitystatus', Value: 'Used' },
+    { Type: 'TERM_MATCH', Field: 'preInstalledSw', Value: 'NA' },
+  ];
 
-      try {
-        const cacheKeyWithRegion = `${CACHE_KEY}_${region}`;
-        console.log(`Checking cache for region: ${region}`);
-        const cachedData = await getCachedData<Record<string, InstanceDetails>>(cacheKeyWithRegion, 1);
-        if (cachedData) {
-          console.log("Cache hit. Loading cached data...");
-          setLoadingStatus("Loading cached data...");
-          setInstanceData(cachedData);
-        } else {
-          console.log("Cache miss. Fetching instance data from AWS...");
-          setLoadingStatus("Fetching instance data from AWS...");
-          const filters = [
-            { Type: "TERM_MATCH", Field: "regionCode", Value: region },
-            { Type: "TERM_MATCH", Field: "operatingSystem", Value: "Linux" },
-            { Type: "TERM_MATCH", Field: "tenancy", Value: "Shared" },
-            { Type: "TERM_MATCH", Field: "capacitystatus", Value: "Used" },
-            { Type: "TERM_MATCH", Field: "preInstalledSw", Value: "NA" },
-          ];
-          const data = await fetchInstanceData(
-            region,
-            ServiceCode.EC2,
-            filters,
-            (progress) => setFetchProgress({
-              current: progress.current ?? 0,
-              total: progress.total ?? 0
-            }),
-            abortControllerRef.current.signal
-          );
-          console.log(`Fetched ${Object.keys(data).length} instance types`);
-          setInstanceData(data);
-          setLoadingStatus("Populating cache...");
-          await setCachedData(cacheKeyWithRegion, 1, data);
-          console.log("Cache populated");
-        }
-      } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') {
-          console.log('Fetch aborted');
-          return;
-        }
-        console.error("Error in fetchData:", error);
-        const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-        setError(errorMessage);
-        showToast({
-          style: Toast.Style.Failure,
-          title: "Error",
-          message: errorMessage,
-        });
-      } finally {
-        setIsLoading(false);
-        abortControllerRef.current = null;
-      }
-    };
-
-    fetchData();
-
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, [region]);
+  const { instanceData, error, isLoading, loadingStatus } = useAWSInstanceData<InstanceDetails>({
+    region,
+    serviceCode: ServiceCode.EC2,
+    cacheKey: CACHE_KEY,
+    filters,
+  });
 
   const filteredInstances = useMemo(() => {
     return Object.entries(instanceData)
@@ -130,11 +71,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
       searchText={searchText}
     >
       {isLoading ? (
-        <List.EmptyView
-          icon={Icon.Cloud}
-          title="Loading EC2 instance data"
-          description={loadingStatus}
-        />
+        <List.EmptyView icon={Icon.Cloud} title="Loading EC2 instance data" description={loadingStatus} />
       ) : error ? (
         <List.Item title="Error" subtitle={error} icon={Icon.ExclamationMark} />
       ) : (
@@ -145,15 +82,13 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
             subtitle={`${info.vcpu} vCPU | ${info.memory} RAM`}
             icon={Icon.ComputerChip}
             accessories={[
-              { text: info.pricePerHour !== null ? `$${info.pricePerHour.toFixed(4)}/hr` : "Price N/A" },
+              { text: info.pricePerHour !== null ? `$${info.pricePerHour.toFixed(4)}/hr` : 'Price N/A' },
             ]}
             actions={
               <ActionPanel>
                 <Action.Push
                   title="View Details"
-                  target={
-                    <InstanceDetailsComponent details={info} region={region} />
-                  }
+                  target={<InstanceDetailsComponent details={info} region={region} />}
                 />
               </ActionPanel>
             }
@@ -164,46 +99,12 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
   );
 }
 
-function InstanceDetailsComponent({
-  details,
-  region,
-}: {
-  details: InstanceDetails;
-  region: string;
-}) {
-  const [baselineBandwidth, setBaselineBandwidth] = useState<string | null>(null);
-  const [isFetchingBandwidth, setIsFetchingBandwidth] = useState(true);
-
-  useEffect(() => {
-    const fetchBandwidth = async () => {
-      setIsFetchingBandwidth(true);
-      try {
-        console.log(`Fetching bandwidth for ${details.instanceType} in ${region}`);
-        const bandwidth = await fetchBaselineBandwidth(details.instanceType, region);
-        setBaselineBandwidth(bandwidth);
-      } catch (error) {
-        console.error(`Error fetching bandwidth for ${details.instanceType}:`, error);
-      } finally {
-        setIsFetchingBandwidth(false);
-      }
-    };
-
-    fetchBandwidth();
-  }, [details.instanceType, region]);
-
-  console.log('Details:', details);
+function InstanceDetailsComponent({ details, region }: { details: InstanceDetails; region: string }) {
+  const { baselineBandwidth, isFetchingBandwidth } = useBaselineBandwidth(details.instanceType, region);
   const { pricePerHour, instanceType, memory, vcpu, physicalProcessor, storage, networkPerformance } = details;
-  const hourlyCost = pricePerHour ?? 0;
-  const dailyCost = hourlyCost * 24;
-  const monthlyCost = dailyCost * 30;
+  const { hourlyCost, dailyCost, monthlyCost } = calculateCosts(pricePerHour);
 
-  const networkThroughput = isFetchingBandwidth
-    ? "Fetching baseline bandwidth..."
-    : baselineBandwidth
-    ? `${networkPerformance} | Baseline: ${baselineBandwidth}`
-    : networkPerformance;
-
-  console.log('Rendering network info:', networkThroughput);
+  const networkThroughput = getNetworkThroughput(isFetchingBandwidth, baselineBandwidth, networkPerformance);
 
   return (
     <List navigationTitle={`Details for ${instanceType}`}>
@@ -213,11 +114,7 @@ function InstanceDetailsComponent({
         <List.Item icon={Icon.MemoryChip} title="Processor Type" accessories={[{ text: physicalProcessor }]} />
         <List.Item icon={Icon.MemoryStick} title="Memory" accessories={[{ text: memory }]} />
         <List.Item icon={Icon.HardDrive} title="Storage" accessories={[{ text: storage }]} />
-        <List.Item
-          icon={Icon.Network}
-          title="Network Performance"
-          accessories={[{ text: networkThroughput }]}
-        />
+        <List.Item icon={Icon.Network} title="Network Performance" accessories={[{ text: networkThroughput }]} />
       </List.Section>
       <List.Section title={`Pricing (${region})`}>
         <List.Item

@@ -9,10 +9,11 @@ import {
   Icon,
   ActionPanel,
   Action,
-} from "@raycast/api";
-import { useEffect, useState, useMemo } from "react";
-import { fetchBaselineBandwidth, fetchInstanceData, ServiceCode } from "./shared/awsClient";
-import { getCachedData, setCachedData } from "./shared/utils";
+} from '@raycast/api';
+import { useState, useMemo } from 'react';
+import { ServiceCode } from './shared/awsClient';
+import { useAWSInstanceData, useBaselineBandwidth } from './shared/hooks';
+import { calculateCosts, getNetworkThroughput } from './shared/utils';
 
 interface Preferences {
   defaultRegion: string;
@@ -38,58 +39,27 @@ interface CommandArguments {
   region?: string;
 }
 
-const CACHE_KEY = "rds_instance_data";
+const CACHE_KEY = 'rds_instance_data';
 
 export default function Command(props: LaunchProps<{ arguments: CommandArguments }>) {
   const { defaultRegion } = getPreferenceValues<Preferences>();
-  const [databaseData, setDatabaseData] = useState<Record<string, DatabaseDetails>>({});
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [searchText, setSearchText] = useState(props.arguments.instanceType || "");
-  const [loadingStatus, setLoadingStatus] = useState("Initializing...");
-
+  const [searchText, setSearchText] = useState(props.arguments.instanceType || '');
   const region = props.arguments.region || defaultRegion;
-  const databaseEngine = props.arguments.databaseEngine || "MySQL";
-  const deploymentOption = "Single-AZ";
+  const databaseEngine = props.arguments.databaseEngine || 'MySQL';
+  const deploymentOption = 'Single-AZ';
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      setLoadingStatus("Checking cache...");
-      try {
-        const cacheKeyWithParams = `${CACHE_KEY}_${region}_${databaseEngine}_${deploymentOption}`;
-        const cachedData = await getCachedData<Record<string, DatabaseDetails>>(cacheKeyWithParams, 1);
-        if (cachedData) {
-          setLoadingStatus("Loading cached data...");
-          setDatabaseData(cachedData);
-        } else {
-          setLoadingStatus("Fetching instance data from AWS...");
-          const filters = [
-            { Type: "TERM_MATCH", Field: "regionCode", Value: region },
-            { Type: "TERM_MATCH", Field: "databaseEngine", Value: databaseEngine },
-            { Type: "TERM_MATCH", Field: "deploymentOption", Value: deploymentOption },
-          ];
-          const data = await fetchInstanceData(region, ServiceCode.RDS, filters);
-          setDatabaseData(data);
-          setLoadingStatus("Populating cache...");
-          await setCachedData(cacheKeyWithParams, 1, data);
-        }
-      } catch (error) {
-        console.error("Error in fetchData:", error);
-        const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-        setError(errorMessage);
-        await showToast({
-          style: Toast.Style.Failure,
-          title: "Error",
-          message: errorMessage,
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  const filters = [
+    { Type: 'TERM_MATCH', Field: 'regionCode', Value: region },
+    { Type: 'TERM_MATCH', Field: 'databaseEngine', Value: databaseEngine },
+    { Type: 'TERM_MATCH', Field: 'deploymentOption', Value: deploymentOption },
+  ];
 
-    fetchData();
-  }, [region, databaseEngine]);
+  const { instanceData: databaseData, error, isLoading, loadingStatus } = useAWSInstanceData<DatabaseDetails>({
+    region,
+    serviceCode: ServiceCode.RDS,
+    cacheKey: CACHE_KEY,
+    filters,
+  });
 
   const filteredDatabases = useMemo(() => {
     return Object.entries(databaseData)
@@ -105,11 +75,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
       searchText={searchText}
     >
       {isLoading ? (
-        <List.EmptyView
-          icon={Icon.Cloud}
-          title="Loading RDS instance data"
-          description={loadingStatus}
-        />
+        <List.EmptyView icon={Icon.Cloud} title="Loading RDS instance data" description={loadingStatus} />
       ) : error ? (
         <List.Item title="Error" subtitle={error} icon={Icon.ExclamationMark} />
       ) : filteredDatabases.length === 0 ? (
@@ -124,7 +90,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
             key={key}
             title={info.instanceType}
             subtitle={
-              info.usagetype.includes("IOOptimized")
+              info.usagetype.includes('IOOptimized')
                 ? `${info.vcpu} vCPU | ${info.memory} RAM | I/O-Optimized`
                 : `${info.vcpu} vCPU | ${info.memory} RAM`
             }
@@ -132,7 +98,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
             accessories={
               info.pricePerHour !== null
                 ? [{ text: `${info.databaseEngine} | $${info.pricePerHour.toFixed(4)}/hr` }]
-                : [{ text: "Price N/A" }]
+                : [{ text: 'Price N/A' }]
             }
             actions={
               <ActionPanel>
@@ -149,33 +115,11 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
   );
 }
 
-function DatabaseDetailsComponent({
-  details,
-  region,
-}: {
-  details: DatabaseDetails;
-  region: string;
-}) {
-  const [baselineBandwidth, setBaselineBandwidth] = useState<string | null>(null);
-  const [isFetchingBandwidth, setIsFetchingBandwidth] = useState(true);
-
-  useEffect(() => {
-    const fetchBandwidth = async () => {
-      setIsFetchingBandwidth(true);
-      try {
-        console.log(`Fetching bandwidth for ${details.instanceType} in ${region}`);
-        const bandwidth = await fetchBaselineBandwidth(details.instanceType.replace(/^db\./, ""), region);
-        setBaselineBandwidth(bandwidth);
-      } catch (error) {
-        console.error(`Error fetching bandwidth for ${details.instanceType}:`, error);
-      } finally {
-        setIsFetchingBandwidth(false);
-      }
-    };
-
-    fetchBandwidth();
-  }, [details.instanceType, region]);
-
+function DatabaseDetailsComponent({ details, region }: { details: DatabaseDetails; region: string }) {
+  const { baselineBandwidth, isFetchingBandwidth } = useBaselineBandwidth(
+    details.instanceType.replace(/^db\./, ''),
+    region
+  );
   const {
     pricePerHour,
     databaseEngine,
@@ -186,15 +130,9 @@ function DatabaseDetailsComponent({
     physicalProcessor,
     networkPerformance,
   } = details;
-  const hourlyCost = pricePerHour ?? 0;
-  const dailyCost = hourlyCost * 24;
-  const monthlyCost = dailyCost * 30;
+  const { hourlyCost, dailyCost, monthlyCost } = calculateCosts(pricePerHour);
 
-  const networkThroughput = isFetchingBandwidth
-    ? "Fetching baseline bandwidth..."
-    : baselineBandwidth
-    ? `${networkPerformance} | Baseline: ${baselineBandwidth}`
-    : networkPerformance;
+  const networkThroughput = getNetworkThroughput(isFetchingBandwidth, baselineBandwidth, networkPerformance);
 
   return (
     <List navigationTitle={`Details for ${instanceType}`}>
@@ -205,11 +143,7 @@ function DatabaseDetailsComponent({
         <List.Item icon={Icon.MemoryChip} title="Processor Type" accessories={[{ text: physicalProcessor }]} />
         <List.Item icon={Icon.MemoryStick} title="Memory" accessories={[{ text: memory }]} />
         <List.Item icon={Icon.HardDrive} title="Storage" accessories={[{ text: storage }]} />
-        <List.Item
-          icon={Icon.Network}
-          title="Network Performance"
-          accessories={[{ text: networkThroughput }]}
-        />
+        <List.Item icon={Icon.Network} title="Network Performance" accessories={[{ text: networkThroughput }]} />
       </List.Section>
       <List.Section title={`Pricing (${region})`}>
         <List.Item
