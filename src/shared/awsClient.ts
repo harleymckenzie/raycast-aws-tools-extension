@@ -113,6 +113,7 @@ export async function fetchInstanceData(
         const product = priceJSON.product;
         const attributes = product.attributes;
         const instanceType = attributes.instanceType;
+        const usageType = attributes.usagetype; // Add this line
 
         if (!instanceType) continue;
 
@@ -123,7 +124,9 @@ export async function fetchInstanceData(
           const priceDimension = Object.values(priceDimensions)[0] as any;
           const pricePerUnit = parseFloat(priceDimension.pricePerUnit.USD);
 
-          instanceData[instanceType] = {
+          // Use a combination of instanceType and usageType as the key
+          const key = `${instanceType}|${usageType}`;
+          instanceData[key] = {
             pricePerHour: pricePerUnit,
             ...attributes,
           };

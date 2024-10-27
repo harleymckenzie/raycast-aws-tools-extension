@@ -10,7 +10,7 @@ import {
   ActionPanel,
   Action,
 } from "@raycast/api";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { fetchInstanceData, fetchBaselineBandwidth, ServiceCode } from "./shared/awsClient";
 import { getCachedData, setCachedData } from "./shared/utils";
 
@@ -20,8 +20,9 @@ interface Preferences {
 
 interface InstanceDetails {
   pricePerHour: number | null;
-  memory: string;
+  instanceType: string;
   vcpu: string;
+  memory: string;
   physicalProcessor: string;
   storage: string;
   networkPerformance: string;
@@ -115,9 +116,11 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
     };
   }, [region]);
 
-  const filteredInstances = Object.entries(instanceData)
-    .filter(([type]) => type.toLowerCase().includes(searchText.toLowerCase()))
-    .sort(([a], [b]) => a.localeCompare(b));
+  const filteredInstances = useMemo(() => {
+    return Object.entries(instanceData)
+      .filter(([key]) => key.toLowerCase().includes(searchText.toLowerCase()))
+      .sort(([a], [b]) => a.localeCompare(b));
+  }, [instanceData, searchText]);
 
   return (
     <List
@@ -135,10 +138,10 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
       ) : error ? (
         <List.Item title="Error" subtitle={error} icon={Icon.ExclamationMark} />
       ) : (
-        filteredInstances.map(([instanceType, info]) => (
+        filteredInstances.map(([key, info]) => (
           <List.Item
-            key={instanceType}
-            title={instanceType}
+            key={key}
+            title={info.instanceType}
             subtitle={`${info.vcpu} vCPU | ${info.memory} RAM`}
             icon={Icon.ComputerChip}
             accessories={[
@@ -149,11 +152,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
                 <Action.Push
                   title="View Details"
                   target={
-                    <InstanceDetailsComponent
-                      instanceType={instanceType}
-                      details={info}
-                      region={region}
-                    />
+                    <InstanceDetailsComponent details={info} region={region} />
                   }
                 />
               </ActionPanel>
@@ -166,11 +165,9 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
 }
 
 function InstanceDetailsComponent({
-  instanceType,
   details,
   region,
 }: {
-  instanceType: string;
   details: InstanceDetails;
   region: string;
 }) {
@@ -181,20 +178,21 @@ function InstanceDetailsComponent({
     const fetchBandwidth = async () => {
       setIsFetchingBandwidth(true);
       try {
-        const bandwidth = await fetchBaselineBandwidth(instanceType, region);
+        console.log(`Fetching bandwidth for ${details.instanceType} in ${region}`);
+        const bandwidth = await fetchBaselineBandwidth(details.instanceType, region);
         setBaselineBandwidth(bandwidth);
       } catch (error) {
-        console.error(`Error fetching bandwidth for ${instanceType}:`, error);
+        console.error(`Error fetching bandwidth for ${details.instanceType}:`, error);
       } finally {
         setIsFetchingBandwidth(false);
       }
     };
 
     fetchBandwidth();
-  }, [instanceType, region]);
+  }, [details.instanceType, region]);
 
   console.log('Details:', details);
-  const { pricePerHour, memory, vcpu, physicalProcessor, storage, networkPerformance } = details;
+  const { pricePerHour, instanceType, memory, vcpu, physicalProcessor, storage, networkPerformance } = details;
   const hourlyCost = pricePerHour ?? 0;
   const dailyCost = hourlyCost * 24;
   const monthlyCost = dailyCost * 30;
