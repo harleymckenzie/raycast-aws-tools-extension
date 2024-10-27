@@ -81,7 +81,8 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
     fetchData();
   }, [region]);
 
-  const filteredNodes = useMemo(() => {
+
+  const filteredInstances = useMemo(() => {
     return Object.entries(nodeData)
       .filter(([_, info]) => info.instanceType.toLowerCase().includes(searchText.toLowerCase()))
       .sort(([a], [b]) => a.localeCompare(b));
@@ -91,7 +92,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
     <List
       isLoading={isLoading}
       onSearchTextChange={setSearchText}
-      searchBarPlaceholder="Search ElastiCache Redis node types..."
+      searchBarPlaceholder="Search ElastiCache instance types..."
       searchText={searchText}
     >
       {isLoading ? (
@@ -102,14 +103,14 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
         />
       ) : error ? (
         <List.Item title="Error" subtitle={error} icon={Icon.ExclamationMark} />
-      ) : filteredNodes.length === 0 ? (
+      ) : filteredInstances.length === 0 ? (
         <List.EmptyView
           icon={Icon.MagnifyingGlass}
           title="No matching nodes found"
           description="Try adjusting your search term"
         />
       ) : (
-        filteredNodes.map(([key, info]) => (
+        filteredInstances.map(([key, info]) => (
           <List.Item
             key={key}
             title={info.instanceType}
