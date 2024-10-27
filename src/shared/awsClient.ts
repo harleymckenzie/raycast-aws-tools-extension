@@ -48,7 +48,11 @@ export function createEC2Client(profile: string, region: string): EC2Client {
   });
 }
 
-export async function fetchBaselineBandwidth(profile: string, instanceType: string, region: string): Promise<string | null> {
+export async function fetchBaselineBandwidth(
+  instanceType: string,
+  region: string,
+  profile: string | undefined
+): Promise<string | null> {
   console.log(`Fetching baseline bandwidth for ${instanceType} in ${region}`);
   const { awsProfile, defaultRegion } = getPreferenceValues<Preferences>();
   const profileToUse = profile || awsProfile;
@@ -90,9 +94,12 @@ export async function fetchInstanceData(
   filters: { Type: string; Field: string; Value: string }[],
   setProgress?: (progress: { current: number; total: number | null; message: string }) => void,
   signal?: AbortSignal,
+  profile?: string | undefined,
 ): Promise<Record<string, any>> {
   console.log(`Starting to fetch ${serviceCode} instance data for region: ${region}`);
-  const client = createPricingClient();
+  const { awsProfile } = getPreferenceValues<Preferences>();
+  const profileToUse = profile || awsProfile;
+  const client = createPricingClient(profileToUse);
   const instanceData: Record<string, any> = {};
   let pageCount = 0;
   let instanceCount = 0;
@@ -101,11 +108,11 @@ export async function fetchInstanceData(
     { client },
     {
       ServiceCode: serviceCode,
-      Filters: filters.map((filter) => ({
+      Filters: Array.isArray(filters) ? filters.map((filter) => ({
         Type: "TERM_MATCH" as const,
         Field: filter.Field,
         Value: filter.Value,
-      })),
+      })) : [],
     },
   );
 
