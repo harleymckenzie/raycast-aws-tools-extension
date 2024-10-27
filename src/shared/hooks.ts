@@ -11,6 +11,7 @@ interface UseAWSInstanceDataOptions<T> {
   cacheKey: string;
   filters: any[];
   dataProcessor?: (data: any) => Record<string, T>;
+  dependencies?: any[];
 }
 
 export function useAWSInstanceData<T>({
@@ -19,7 +20,10 @@ export function useAWSInstanceData<T>({
   cacheKey,
   filters,
   dataProcessor,
+  dependencies = [],
 }: UseAWSInstanceDataOptions<T>) {
+  console.log(`Fetching ${serviceCode} instance data for region: ${region}`);
+  console.log('Filters:', JSON.stringify(filters, null, 2));
   const [instanceData, setInstanceData] = useState<Record<string, T>>({});
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -82,7 +86,7 @@ export function useAWSInstanceData<T>({
         abortControllerRef.current.abort();
       }
     };
-  }, [region, serviceCode]);
+  }, [region, serviceCode, ...dependencies]);
 
   return { instanceData, error, isLoading, loadingStatus, fetchProgress };
 }

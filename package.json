@@ -35,9 +35,9 @@
       "icon": "EC2.png"
     },
     {
-      "name": "search-ec2-instance",
-      "title": "Search EC2 Instance Types",
-      "description": "Finds and returns details and running costs for the provided EC2 instance type.",
+      "name": "search-instance-price",
+      "title": "Search Instance Types",
+      "description": "Find and compare prices across EC2, RDS, and ElastiCache instance types.",
       "mode": "view",
       "arguments": [
         {
@@ -47,62 +47,49 @@
           "required": false
         },
         {
-          "name": "region",
-          "type": "text",
-          "placeholder": "AWS Region",
-          "required": false
-        }
-      ],
-      "icon": "EC2.png"
-    },
-    {
-      "name": "search-rds-instance",
-      "title": "Search RDS Instance Types",
-      "description": "Finds and returns details and running costs for the provided RDS instance type.",
-      "mode": "view",
-      "arguments": [
-        {
-          "name": "instanceType",
-          "type": "text",
-          "placeholder": "Instance Type",
-          "required": false
-        },
-        {
-          "name": "databaseEngine",
+          "name": "service",
           "type": "dropdown",
           "data": [
             {
-              "title": "Aurora MySQL",
-              "value": "Aurora MySQL"
+              "title": "EC2",
+              "value": "EC2"
             },
             {
-              "title": "Aurora PostgreSQL",
-              "value": "Aurora PostgreSQL"
+              "title": "Elasticache",
+              "value": "Elasticache"
             },
             {
-              "title": "MySQL",
-              "value": "MySQL"
+              "title": "RDS (Aurora MySQL)",
+              "value": "RDS (Aurora MySQL)"
             },
             {
-              "title": "PostgreSQL",
-              "value": "PostgreSQL"
+              "title": "RDS (Aurora PostgreSQL)",
+              "value": "RDS (Aurora PostgreSQL)"
             },
             {
-              "title": "MariaDB",
-              "value": "MariaDB"
+              "title": "RDS (MySQL)",
+              "value": "RDS (MySQL)"
             },
             {
-              "title": "Oracle",
-              "value": "Oracle"
+              "title": "RDS (PostgreSQL)",
+              "value": "RDS (PostgreSQL)"
             },
             {
-              "title": "SQL Server",
-              "value": "SQL Server"
+              "title": "RDS (MariaDB)",
+              "value": "RDS (MariaDB)"
+            },
+            {
+              "title": "RDS (Oracle)",
+              "value": "RDS (Oracle)"
+            },
+            {
+              "title": "RDS (SQL Server)",
+              "value": "RDS (SQL Server)"
             }
           ],
-          "placeholder": "Database Engine",
-          "required": true,
-          "default": "Aurora MySQL"
+          "placeholder": "AWS Service",
+          "required": false,
+          "default": "EC2"
         },
         {
           "name": "region",
@@ -111,28 +98,7 @@
           "required": false
         }
       ],
-      "icon": "RDS.png"
-    },
-    {
-      "name": "search-elasticache-instance",
-      "title": "Search ElastiCache Node Types",
-      "description": "Finds and returns details and running costs for the provided ElastiCache Redis node type.",
-      "mode": "view",
-      "arguments": [
-        {
-          "name": "instanceType",
-          "type": "text",
-          "placeholder": "Node Type",
-          "required": false
-        },
-        {
-          "name": "region",
-          "type": "text",
-          "placeholder": "AWS Region",
-          "required": false
-        }
-      ],
-      "icon": "ElastiCache.png"
+      "icon": "AWS.png"
     }
   ],
   "preferences": [
@@ -150,7 +116,7 @@
       "description": "The default AWS region to use.",
       "type": "textfield",
       "required": true,
-      "default": "us-east-1"
+      "default": "eu-west-1"
     },
     {
       "name": "defaultTerminal",

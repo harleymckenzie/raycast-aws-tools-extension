@@ -112,6 +112,7 @@ function NodeDetailsComponent({ details, region }: { details: NodeDetails; regio
 
   const networkThroughput = getNetworkThroughput(isFetchingBandwidth, baselineBandwidth, networkPerformance);
 
+
   return (
     <List navigationTitle={`Details for ${details.instanceType}`}>
       <List.Section title="Node Details">

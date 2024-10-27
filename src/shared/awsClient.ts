@@ -17,7 +17,7 @@ interface Preferences {
 export enum ServiceCode {
   EC2 = "AmazonEC2",
   RDS = "AmazonRDS",
-  ElastiCache = "AmazonElastiCache",
+  ELASTICACHE = "AmazonElastiCache"  // Note the capital 'C' in 'Cache'
 }
 
 export async function getProfiles(): Promise<{ id: string; name: string }[]> {
