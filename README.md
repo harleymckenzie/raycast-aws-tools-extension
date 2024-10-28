@@ -2,8 +2,40 @@
 
 ## Overview
 
-The AWS Tools Raycast Extension allows you to retrieve instance details and 
-pricing for supported AWS services.
+The AWS Tools Raycast Extension allows you to retrieve details for running 
+EC2 instances, as well as pricing information for supported AWS services.
+
+## Features
+
+- Unified search for pricing information across multiple AWS services.
+- Detailed instance specifications including vCPU, memory, network performance.
+- Easy service switching with dropdown navigation.
+
+### EC2 Instance Management
+- List and view all EC2 instances in your account
+- Quick access to instance details (IP addresses, state, tags)
+- Direct SSH command generation
+- One-click access to AWS Console
+- Copy functionality for IPs and instance IDs
+
+## Supported Services
+
+### Compute
+- Amazon EC2
+
+### Database
+- Amazon RDS
+  - Aurora MySQL
+  - Aurora PostgreSQL
+  - MySQL
+  - PostgreSQL
+  - MariaDB
+  - Oracle
+  - SQL Server
+
+### Cache
+- Amazon ElastiCache
+  - Redis
 
 ## Installation
 
@@ -25,16 +57,12 @@ pricing for supported AWS services.
    (e.g. "ec2", "rds").
 4. Select the instance you want to retrieve information for.
 
-## Supported Services
+## Configuration
 
-- EC2 (Elastic Compute Cloud)
-- RDS (Relational Database Service)
-- ElastiCache
-
-## Features
-
-- Retrieve instance details
-- Retrieve pricing information
+Configure the following in Raycast preferences:
+- AWS Profile
+- Default Region
+- Default Terminal (for SSH commands)
 
 ## License
 
