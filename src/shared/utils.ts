@@ -36,14 +36,13 @@ export function calculateCosts(pricePerHour: number | null) {
   return { hourlyCost, dailyCost, monthlyCost };
 }
 
-
 export function getNetworkThroughput(
   isFetchingBandwidth: boolean,
   baselineBandwidth: string | null,
-  networkPerformance: string
+  networkPerformance: string,
 ): string {
   if (isFetchingBandwidth) {
-    return 'Fetching baseline bandwidth...';
+    return "Fetching baseline bandwidth...";
   } else if (baselineBandwidth) {
     return `${networkPerformance} | Baseline: ${baselineBandwidth}`;
   } else {

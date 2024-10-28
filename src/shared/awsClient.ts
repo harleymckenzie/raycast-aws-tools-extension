@@ -1,11 +1,7 @@
 // awsClient.ts
 
 import { PricingClient, GetProductsCommand } from "@aws-sdk/client-pricing";
-import {
-  EC2Client,
-  DescribeInstanceTypesCommand,
-  _InstanceType as EC2InstanceType,
-} from "@aws-sdk/client-ec2";
+import { EC2Client, DescribeInstanceTypesCommand, _InstanceType as EC2InstanceType } from "@aws-sdk/client-ec2";
 import { fromIni } from "@aws-sdk/credential-provider-ini";
 import { getPreferenceValues } from "@raycast/api";
 import { paginateGetProducts } from "@aws-sdk/client-pricing";
@@ -20,15 +16,15 @@ interface Preferences {
 export enum ServiceCode {
   EC2 = "AmazonEC2",
   RDS = "AmazonRDS",
-  ELASTICACHE = "AmazonElastiCache"  // Note the capital 'C' in 'Cache'
+  ELASTICACHE = "AmazonElastiCache", // Note the capital 'C' in 'Cache'
 }
 
 export async function getProfiles(): Promise<{ id: string; name: string }[]> {
   try {
     const profiles = await parseKnownFiles({});
-    return Object.keys(profiles).map(profile => ({
+    return Object.keys(profiles).map((profile) => ({
       id: profile,
-      name: profile
+      name: profile,
     }));
   } catch (error) {
     console.error("Error fetching AWS profiles:", error);
@@ -54,7 +50,7 @@ export function createEC2Client(profile: string, region: string): EC2Client {
 export async function fetchBaselineBandwidth(
   instanceType: string,
   region: string,
-  profile: string | undefined
+  profile: string | undefined,
 ): Promise<string | null> {
   console.log(`Fetching baseline bandwidth for ${instanceType} in ${region}`);
   const { awsProfile, defaultRegion } = getPreferenceValues<Preferences>();
@@ -111,11 +107,13 @@ export async function fetchInstanceData(
     { client },
     {
       ServiceCode: serviceCode,
-      Filters: Array.isArray(filters) ? filters.map((filter) => ({
-        Type: "TERM_MATCH" as const,
-        Field: filter.Field,
-        Value: filter.Value,
-      })) : [],
+      Filters: Array.isArray(filters)
+        ? filters.map((filter) => ({
+            Type: "TERM_MATCH" as const,
+            Field: filter.Field,
+            Value: filter.Value,
+          }))
+        : [],
     },
   );
 
