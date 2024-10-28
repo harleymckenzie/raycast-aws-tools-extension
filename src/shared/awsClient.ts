@@ -50,7 +50,7 @@ export function createEC2Client(profile: string, region: string): EC2Client {
 export async function fetchBaselineBandwidth(
   instanceType: string,
   region: string,
-  profile: string | undefined,
+  profile?: string,
 ): Promise<string | null> {
   console.log(`Fetching baseline bandwidth for ${instanceType} in ${region}`);
   const { awsProfile, defaultRegion } = getPreferenceValues<Preferences>();

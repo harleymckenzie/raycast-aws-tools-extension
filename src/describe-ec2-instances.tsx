@@ -46,7 +46,7 @@ export default function Command() {
       {instances?.map((instance) => (
         <List.Item
           key={instance?.InstanceId}
-          title={instance?.Tags?.find((tag) => tag.Key === "Name")?.Value ?? instance?.InstanceId}
+          title={instance?.Tags?.find((tag) => tag.Key === "Name")?.Value ?? instance?.InstanceId ?? ""}
           icon={{ source: Icon.Dot, tintColor: instance?.State?.Name === "running" ? Color.Green : Color.Red }}
           accessories={[
             {
