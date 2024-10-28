@@ -55,10 +55,6 @@
               "value": "EC2"
             },
             {
-              "title": "Elasticache",
-              "value": "Elasticache"
-            },
-            {
               "title": "RDS (Aurora MySQL)",
               "value": "RDS (Aurora MySQL)"
             },
@@ -85,6 +81,10 @@
             {
               "title": "RDS (SQL Server)",
               "value": "RDS (SQL Server)"
+            },
+            {
+              "title": "Elasticache (Redis)",
+              "value": "Elasticache (Redis)"
             }
           ],
           "placeholder": "AWS Service",

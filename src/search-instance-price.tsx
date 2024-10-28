@@ -5,6 +5,7 @@ import {
     Icon,
     ActionPanel,
     Action,
+    Color,
   } from '@raycast/api';
   import { useState, useMemo, useEffect } from 'react';
   import { ServiceCode } from './shared/awsClient';
@@ -40,24 +41,13 @@ import {
     physicalProcessor?: string;
     clockSpeed?: number;
     architecture?: string;
-    gpu?: {
-      name: string;
-      count: number;
-      memoryGiB: number;
-    };
-    enhancedNetworkingSupported?: boolean;
-    dedicatedEbsOptimized?: boolean;
-    maxBandwidthGbps?: number;
-    baselineBandwidthGbps?: number;
-    maxIops?: number;
-    baselineIops?: number;
   }
   
   const SERVICE_CONFIGS = {
     'EC2': {
       serviceCode: ServiceCode.EC2,
       cacheKey: 'ec2_instance_data',
-      icon: Icon.ComputerChip,
+      icon: 'EC2.png',
       additionalFilters: [
         { Type: 'TERM_MATCH', Field: 'operatingSystem', Value: 'Linux' },
         { Type: 'TERM_MATCH', Field: 'tenancy', Value: 'Shared' },
@@ -65,9 +55,10 @@ import {
         { Type: 'TERM_MATCH', Field: 'preInstalledSw', Value: 'NA' },
       ],
     },
-    'Elasticache': {
+    'Elasticache (Redis)': {
       serviceCode: ServiceCode.ELASTICACHE,
-      cacheKey: 'elasticache_instance_data',
+      cacheKey: 'elasticache_redis_instance_data',
+      icon: 'Elasticache.png',
       additionalFilters: [
         { Type: 'TERM_MATCH', Field: 'cacheEngine', Value: 'Redis' },
       ],
@@ -75,6 +66,7 @@ import {
     'RDS (Aurora MySQL)': {
       serviceCode: ServiceCode.RDS,
       cacheKey: 'rds_aurora_mysql_data',
+      icon: 'RDS.png',
       additionalFilters: [
         { Type: 'TERM_MATCH', Field: 'databaseEngine', Value: 'Aurora MySQL' },
         { Type: 'TERM_MATCH', Field: 'deploymentOption', Value: 'Single-AZ' },
@@ -83,6 +75,7 @@ import {
     'RDS (Aurora PostgreSQL)': {
       serviceCode: ServiceCode.RDS,
       cacheKey: 'rds_aurora_postgresql_data',
+      icon: 'RDS.png',
       additionalFilters: [
         { Type: 'TERM_MATCH', Field: 'databaseEngine', Value: 'Aurora PostgreSQL' },
         { Type: 'TERM_MATCH', Field: 'deploymentOption', Value: 'Single-AZ' },
@@ -91,6 +84,7 @@ import {
     'RDS (MySQL)': {
       serviceCode: ServiceCode.RDS,
       cacheKey: 'rds_mysql_data',
+      icon: 'RDS.png',
       additionalFilters: [
         { Type: 'TERM_MATCH', Field: 'databaseEngine', Value: 'MySQL' },
         { Type: 'TERM_MATCH', Field: 'deploymentOption', Value: 'Single-AZ' },
@@ -99,6 +93,7 @@ import {
     'RDS (PostgreSQL)': {
       serviceCode: ServiceCode.RDS,
       cacheKey: 'rds_postgresql_data',
+      icon: 'RDS.png',
       additionalFilters: [
         { Type: 'TERM_MATCH', Field: 'databaseEngine', Value: 'PostgreSQL' },
         { Type: 'TERM_MATCH', Field: 'deploymentOption', Value: 'Single-AZ' },
@@ -107,6 +102,7 @@ import {
     'RDS (MariaDB)': {
       serviceCode: ServiceCode.RDS,
       cacheKey: 'rds_mariadb_data',
+      icon: 'RDS.png',
       additionalFilters: [
         { Type: 'TERM_MATCH', Field: 'databaseEngine', Value: 'MariaDB' },
         { Type: 'TERM_MATCH', Field: 'deploymentOption', Value: 'Single-AZ' },
@@ -115,6 +111,7 @@ import {
     'RDS (Oracle)': {
       serviceCode: ServiceCode.RDS,
       cacheKey: 'rds_oracle_data',
+      icon: 'RDS.png',
       additionalFilters: [
         { Type: 'TERM_MATCH', Field: 'databaseEngine', Value: 'Oracle' },
         { Type: 'TERM_MATCH', Field: 'deploymentOption', Value: 'Single-AZ' },
@@ -123,6 +120,7 @@ import {
     'RDS (SQL Server)': {
       serviceCode: ServiceCode.RDS,
       cacheKey: 'rds_sqlserver_data',
+      icon: 'RDS.png',
       additionalFilters: [
         { Type: 'TERM_MATCH', Field: 'databaseEngine', Value: 'SQL Server' },
         { Type: 'TERM_MATCH', Field: 'deploymentOption', Value: 'Single-AZ' },
@@ -137,6 +135,20 @@ interface InstanceDetailsProps {
   region: string;
   service: ServiceType;
 }
+
+// Helper functions
+const getStorageInfo = (details: InstanceDetails): string => {
+  if (!details.storage) return "EBS-Only";
+  return `${details.storage.type}${
+    details.storage.size ? ` ${details.storage.size} GB` : ''
+  }`;
+};
+
+const getInstancePrefix = (service: ServiceType): string => {
+  if (service.startsWith('RDS')) return 'db.';
+  if (service.startsWith('Elasticache')) return 'cache.';
+  return '';
+};
 
 function InstanceDetailsComponent({ details, region, service }: InstanceDetailsProps) {
   const [selectedService, setSelectedService] = useState<ServiceType>(service);
@@ -156,46 +168,20 @@ function InstanceDetailsComponent({ details, region, service }: InstanceDetailsP
     dependencies: [selectedService]
   });
 
-  // Get current instance price
+  // Update instance type when service changes
+  useEffect(() => {
+    const baseInstanceType = instanceType.replace(/^(db\.|cache\.)+/, '');
+    const newPrefix = getInstancePrefix(selectedService);
+    setInstanceType(`${newPrefix}${baseInstanceType}`);
+  }, [selectedService]);
+
   const currentInstanceData = useMemo(() => {
     if (!instanceData) return null;
-    
-    // Find the instance by matching the prefix of the usage type
     const matchingInstance = Object.entries(instanceData).find(([key]) => 
       key.startsWith(`${instanceType}|`)
     );
-    
-    console.log('Instance Data Lookup:', {
-      instanceType,
-      matchFound: !!matchingInstance,
-      matchingKey: matchingInstance?.[0]
-    });
-    
     return matchingInstance ? matchingInstance[1] : null;
   }, [instanceData, instanceType]);
-
-  // Update instance type when service changes
-  useEffect(() => {
-    let newInstanceType = instanceType;
-    
-    // First, strip all prefixes
-    newInstanceType = newInstanceType.replace(/^(db\.|cache\.)+/, '');
-    
-    // Then add the correct prefix based on the selected service
-    if (selectedService.startsWith('RDS')) {
-      newInstanceType = `db.${newInstanceType}`;
-    } else if (selectedService === 'Elasticache') {
-      newInstanceType = `cache.${newInstanceType}`;
-    }
-    
-    console.log('Instance Type Update:', {
-      from: instanceType,
-      to: newInstanceType,
-      service: selectedService
-    });
-    
-    setInstanceType(newInstanceType);
-  }, [selectedService]);
 
   const { baselineBandwidth, isFetchingBandwidth } = useBaselineBandwidth(
     instanceType.replace(/^(db\.|cache\.)/, ''),
@@ -207,18 +193,6 @@ function InstanceDetailsComponent({ details, region, service }: InstanceDetailsP
     baselineBandwidth, 
     details.networkPerformance
   );
-  
-  // Use the current instance data for pricing if available
-  const pricePerHour = currentInstanceData?.pricePerHour ?? details.pricePerHour;
-  const { hourlyCost, dailyCost, monthlyCost } = calculateCosts(pricePerHour);
-
-  // Helper function to format storage info
-  const getStorageInfo = (details: InstanceDetails) => {
-    if (!details.storage) return "EBS-Only";
-    return `${details.storage.type}${
-      details.storage.size ? ` ${details.storage.size} GB` : ''
-    }`;
-  };
 
   return (
     <List 
@@ -230,13 +204,42 @@ function InstanceDetailsComponent({ details, region, service }: InstanceDetailsP
           value={selectedService}
           onChange={(newValue) => setSelectedService(newValue as ServiceType)}
         >
-          {Object.keys(SERVICE_CONFIGS).map((service) => (
-            <List.Dropdown.Item
-              key={service}
-              title={service}
-              value={service}
-            />
-          ))}
+          <List.Dropdown.Section title="EC2">
+            {Object.keys(SERVICE_CONFIGS)
+              .filter((service) => service === 'EC2')
+              .map((service) => (
+                <List.Dropdown.Item
+                  key={service}
+                  title={service}
+                  value={service}
+                  icon={{ source: SERVICE_CONFIGS[service as ServiceType].icon }}
+                />
+              ))}
+          </List.Dropdown.Section>
+          <List.Dropdown.Section title="RDS">
+            {Object.keys(SERVICE_CONFIGS)
+              .filter((service) => service.startsWith('RDS'))
+              .map((service) => (
+                <List.Dropdown.Item
+                  key={service}
+                  title={service}
+                  value={service}
+                  icon={{ source: SERVICE_CONFIGS[service as ServiceType].icon }}
+                />
+              ))}
+          </List.Dropdown.Section>
+          <List.Dropdown.Section title="Elasticache">
+            {Object.keys(SERVICE_CONFIGS)
+              .filter((service) => service.startsWith('Elasticache'))
+              .map((service) => (
+                <List.Dropdown.Item
+                  key={service}
+                  title={service}
+                  value={service}
+                  icon={{ source: SERVICE_CONFIGS[service as ServiceType].icon }}
+                />
+              ))}
+          </List.Dropdown.Section>
         </List.Dropdown>
       }
     >
@@ -421,13 +424,42 @@ export default function Command(
           value={selectedService}
           onChange={(newValue) => setSelectedService(newValue as ServiceType)}
         >
-          {Object.keys(SERVICE_CONFIGS).map((service) => (
-            <List.Dropdown.Item
-              key={service}
-              title={service}
-              value={service}
-            />
-          ))}
+          <List.Dropdown.Section title="EC2">
+            {Object.keys(SERVICE_CONFIGS)
+              .filter((service) => service === 'EC2')
+              .map((service) => (
+                <List.Dropdown.Item
+                  key={service}
+                  title={service}
+                  value={service}
+                  icon={{ source: SERVICE_CONFIGS[service as ServiceType].icon }}
+                />
+              ))}
+          </List.Dropdown.Section>
+          <List.Dropdown.Section title="RDS">
+            {Object.keys(SERVICE_CONFIGS)
+              .filter((service) => service.startsWith('RDS'))
+              .map((service) => (
+                <List.Dropdown.Item
+                  key={service}
+                  title={service}
+                  value={service}
+                  icon={{ source: SERVICE_CONFIGS[service as ServiceType].icon }}
+                />
+              ))}
+          </List.Dropdown.Section>
+          <List.Dropdown.Section title="Elasticache">
+            {Object.keys(SERVICE_CONFIGS)
+              .filter((service) => service.startsWith('Elasticache'))
+              .map((service) => (
+                <List.Dropdown.Item
+                  key={service}
+                  title={service}
+                  value={service}
+                  icon={{ source: SERVICE_CONFIGS[service as ServiceType].icon }}
+                />
+              ))}
+          </List.Dropdown.Section>
         </List.Dropdown>
       }
     >
