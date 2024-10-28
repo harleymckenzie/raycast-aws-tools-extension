@@ -34,14 +34,8 @@ export const useProfileOptions = (): ProfileOption[] => {
   return profileOptions;
 };
 
-export const useAwsProfileDropdown = (
-  defaultProfile: string,
-  onProfileChange: (newProfile: string) => void
-) => {
-  const [selectedProfile, setSelectedProfile] = useCachedState<string>(
-    "aws_profile",
-    defaultProfile
-  );
+export const useAwsProfileDropdown = (defaultProfile: string, onProfileChange: (newProfile: string) => void) => {
+  const [selectedProfile, setSelectedProfile] = useCachedState<string>("aws_profile", defaultProfile);
   const profileOptions = useProfileOptions();
 
   const handleProfileChange = (newProfile: string) => {
@@ -50,17 +44,9 @@ export const useAwsProfileDropdown = (
   };
 
   const dropdown = (
-    <List.Dropdown
-      tooltip="Select AWS Profile"
-      onChange={handleProfileChange}
-      value={selectedProfile}
-    >
+    <List.Dropdown tooltip="Select AWS Profile" onChange={handleProfileChange} value={selectedProfile}>
       {profileOptions.map((profile) => (
-        <List.Dropdown.Item
-          key={profile.name}
-          value={profile.name}
-          title={profile.name}
-        />
+        <List.Dropdown.Item key={profile.name} value={profile.name} title={profile.name} />
       ))}
     </List.Dropdown>
   );
