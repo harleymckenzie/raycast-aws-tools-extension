@@ -91,7 +91,7 @@ export function useAWSInstanceData<T>({
   return { instanceData, error, isLoading, loadingStatus, fetchProgress };
 }
 
-export function useBaselineBandwidth(instanceType: string, region: string) {
+export function useBaselineBandwidth(instanceType: string, region: string, selectedProfile: string) {
   const [baselineBandwidth, setBaselineBandwidth] = useState<string | null>(null);
   const [isFetchingBandwidth, setIsFetchingBandwidth] = useState(true);
 
@@ -100,7 +100,11 @@ export function useBaselineBandwidth(instanceType: string, region: string) {
       setIsFetchingBandwidth(true);
       try {
         console.log(`Fetching bandwidth for ${instanceType} in ${region}`);
-        const bandwidth = await fetchBaselineBandwidth(instanceType, region);
+        const bandwidth = await fetchBaselineBandwidth(
+          instanceType,
+          region,
+          selectedProfile
+        );
         setBaselineBandwidth(bandwidth);
       } catch (error) {
         console.error(`Error fetching bandwidth for ${instanceType}:`, error);
@@ -110,7 +114,7 @@ export function useBaselineBandwidth(instanceType: string, region: string) {
     };
 
     fetchBandwidth();
-  }, [instanceType, region]);
+  }, [instanceType, region, selectedProfile]);
 
   return { baselineBandwidth, isFetchingBandwidth };
 }

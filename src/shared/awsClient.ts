@@ -9,9 +9,12 @@ import {
 import { fromIni } from "@aws-sdk/credential-provider-ini";
 import { getPreferenceValues } from "@raycast/api";
 import { paginateGetProducts } from "@aws-sdk/client-pricing";
+import { parseKnownFiles } from "@aws-sdk/shared-ini-file-loader";
 
 interface Preferences {
   awsProfile: string;
+  defaultRegion: string;
+  defaultTerminal: string;
 }
 
 export enum ServiceCode {
@@ -22,7 +25,7 @@ export enum ServiceCode {
 
 export async function getProfiles(): Promise<{ id: string; name: string }[]> {
   try {
-    const profiles = await parseIni();
+    const profiles = await parseKnownFiles({});
     return Object.keys(profiles).map(profile => ({
       id: profile,
       name: profile

@@ -8,7 +8,7 @@ import {
   getPreferenceValues,
   Detail,
 } from "@raycast/api";
-import { DescribeInstancesCommand } from "@aws-sdk/client-ec2";
+import { DescribeInstancesCommand, Instance } from "@aws-sdk/client-ec2";
 import { createEC2Client } from "./shared/awsClient";
 import { useAwsProfileDropdown, useProfileOptions } from "./shared/awsProfileSelection";
 
@@ -32,7 +32,7 @@ export default function Command() {
     }
   );
 
-  const [instances, setInstances] = useState([]);
+  const [instances, setInstances] = useState<Instance[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -40,7 +40,7 @@ export default function Command() {
       setIsLoading(true);
       try {
         const data = await describeEC2Instances(selectedProfile, region);
-        setInstances(data);
+        setInstances(data ?? []);
       } catch (error) {
         console.error("Error fetching instances:", error);
       } finally {
@@ -116,10 +116,22 @@ export default function Command() {
                 target={<InstanceDetailsComponent instance={instance} />}
               />
               <Action.OpenInBrowser title="Open in Browser" url={consoleUrl + instance.InstanceId} />
-              <Action.CopyToClipboard title="Copy Public IP Address" content={instance.PublicIpAddress} />
-              <Action.Paste title="Paste SSH Command" content={`ssh ${instance.PublicIpAddress}`} />
-              <Action.CopyToClipboard title="Copy SSH Command" content={`ssh ${instance.PublicIpAddress}`} />
-              <Action.CopyToClipboard title="Copy Instance ID" content={instance.InstanceId} />
+              <Action.CopyToClipboard 
+                title="Copy Public IP Address" 
+                content={instance.PublicIpAddress ?? ''} 
+              />
+              <Action.Paste 
+                title="Paste SSH Command" 
+                content={instance.PublicIpAddress ? `ssh ${instance.PublicIpAddress}` : ''} 
+              />
+              <Action.CopyToClipboard 
+                title="Copy SSH Command" 
+                content={instance.PublicIpAddress ? `ssh ${instance.PublicIpAddress}` : ''} 
+              />
+              <Action.CopyToClipboard 
+                title="Copy Instance ID" 
+                content={instance.InstanceId ?? ''} 
+              />
             </ActionPanel>
           }
         />
@@ -129,7 +141,7 @@ export default function Command() {
 }
 
 interface InstanceDetailsProps {
-  instance: any; // Replace 'any' with a proper type if available
+  instance: Instance;
 }
 
 function InstanceDetailsComponent({ instance }: InstanceDetailsProps) {
@@ -155,8 +167,8 @@ function InstanceDetailsComponent({ instance }: InstanceDetailsProps) {
         {instance?.Tags?.map((tag) => (
           <List.Item
             key={tag.Key}
-            title={tag.Key}
-            subtitle={tag.Value}
+            title={tag.Key ?? "N/A"}
+            subtitle={tag.Value ?? "N/A"}
           />
         )) ?? <List.Item title="No tags" subtitle="This instance has no tags" />}
       </List.Section>
@@ -164,7 +176,10 @@ function InstanceDetailsComponent({ instance }: InstanceDetailsProps) {
   );
 }
 
-export async function describeEC2Instances(profile: string, region: string) {
+export async function describeEC2Instances(
+  profile: string,
+  region: string
+): Promise<Instance[]> {
   const { awsProfile, defaultRegion } = getPreferenceValues<Preferences>();
   const profileToUse = profile || awsProfile;
   const regionToUse = region || defaultRegion;
@@ -174,10 +189,11 @@ export async function describeEC2Instances(profile: string, region: string) {
     const input = { DryRun: false };
     const command = new DescribeInstancesCommand(input);
     const response = await ec2_client.send(command);
-    const instances = response.Reservations?.flatMap((reservation) => reservation.Instances);
-
-    return instances;
+    return response.Reservations?.flatMap(
+      (reservation) => reservation.Instances ?? []
+    ) ?? [];
   } catch (error) {
     console.error(error);
+    return [];
   }
 }
