@@ -269,8 +269,8 @@ function InstanceDetailsComponent({ details, region, service }: InstanceDetailsP
             title="Pricing"
             accessories={[
               { text: `$${currentInstanceData.pricePerHour?.toFixed(4) ?? "0.0000"}/hr` },
-              { text: `$${(currentInstanceData.pricePerHour ?? 0 * 24).toFixed(2)}/day` },
-              { text: `$${(currentInstanceData.pricePerHour ?? 0 * 24 * 30).toFixed(2)}/mo` },
+              { text: `$${((currentInstanceData.pricePerHour ?? 0) * 24).toFixed(2)}/day` },
+              { text: `$${((currentInstanceData.pricePerHour ?? 0) * 24 * 30).toFixed(2)}/mo` },
             ]}
           />
         )}
