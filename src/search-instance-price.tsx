@@ -1,8 +1,8 @@
-import { List, LaunchProps, getPreferenceValues, Icon, ActionPanel, Action, Color } from "@raycast/api";
+import { List, LaunchProps, getPreferenceValues, Icon, ActionPanel, Action } from "@raycast/api";
 import { useState, useMemo, useEffect } from "react";
 import { ServiceCode } from "./shared/awsClient";
 import { useAWSInstanceData, useBaselineBandwidth } from "./shared/hooks";
-import { calculateCosts, getNetworkThroughput } from "./shared/utils";
+import { getNetworkThroughput } from "./shared/utils";
 
 interface Preferences {
   defaultRegion: string;
@@ -308,12 +308,11 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
   const serviceConfig = SERVICE_CONFIGS[selectedService];
   const filters = [...baseFilters, ...serviceConfig.additionalFilters];
 
-  const { instanceData, error, isLoading, loadingStatus } = useAWSInstanceData<InstanceDetails>({
+  const { instanceData, error, isLoading } = useAWSInstanceData<InstanceDetails>({
     region,
     serviceCode: serviceConfig.serviceCode,
     cacheKey: serviceConfig.cacheKey,
     filters,
-    // Add this to force refresh when service changes
     dependencies: [selectedService],
   });
 

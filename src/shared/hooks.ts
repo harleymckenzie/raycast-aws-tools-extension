@@ -5,13 +5,28 @@ import { fetchBaselineBandwidth, fetchInstanceData, ServiceCode } from "./awsCli
 import { getCachedData, setCachedData } from "./utils";
 import { Toast, showToast } from "@raycast/api";
 
-interface UseAWSInstanceDataOptions<T> {
+interface AWSInstanceDataOptions<T> {
   region: string;
   serviceCode: ServiceCode;
   cacheKey: string;
-  filters: any[];
-  dataProcessor?: (data: any) => Record<string, T>;
-  dependencies?: any[];
+  filters: Array<{
+    Type: string;
+    Field: string;
+    Value: string;
+  }>;
+  dependencies?: unknown[];
+  dataProcessor?: (data: Record<string, unknown>) => Record<string, T>;
+}
+
+interface AWSInstanceDataResult<T> {
+  instanceData: Record<string, T> | null;
+  error: string | null;
+  isLoading: boolean;
+  loadingStatus: string;
+  fetchProgress: {
+    current: number;
+    total: number;
+  };
 }
 
 export function useAWSInstanceData<T>({
@@ -19,9 +34,9 @@ export function useAWSInstanceData<T>({
   serviceCode,
   cacheKey,
   filters,
-  dataProcessor,
   dependencies = [],
-}: UseAWSInstanceDataOptions<T>) {
+  dataProcessor,
+}: AWSInstanceDataOptions<T>): AWSInstanceDataResult<T> {
   console.log(`Fetching ${serviceCode} instance data for region: ${region}`);
   console.log("Filters:", JSON.stringify(filters, null, 2));
   const [instanceData, setInstanceData] = useState<Record<string, T>>({});

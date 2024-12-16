@@ -1,6 +1,6 @@
 // awsClient.ts
 
-import { PricingClient, GetProductsCommand } from "@aws-sdk/client-pricing";
+import { PricingClient } from "@aws-sdk/client-pricing";
 import { EC2Client, DescribeInstanceTypesCommand, _InstanceType as EC2InstanceType } from "@aws-sdk/client-ec2";
 import { fromIni } from "@aws-sdk/credential-provider-ini";
 import { getPreferenceValues } from "@raycast/api";
@@ -87,6 +87,33 @@ export async function fetchBaselineBandwidth(
   return null;
 }
 
+interface PriceDimension {
+  pricePerUnit: {
+    USD: string;
+  };
+}
+
+interface OnDemandTerm {
+  priceDimensions: Record<string, PriceDimension>;
+}
+
+interface ProductAttributes {
+  instanceType: string;
+  usagetype: string;
+  [key: string]: string;
+}
+
+interface PriceProduct {
+  attributes: ProductAttributes;
+}
+
+interface PriceData {
+  product: PriceProduct;
+  terms: {
+    OnDemand: Record<string, OnDemandTerm>;
+  };
+}
+
 export async function fetchInstanceData(
   region: string,
   serviceCode: ServiceCode,
@@ -94,12 +121,12 @@ export async function fetchInstanceData(
   setProgress?: (progress: { current: number; total: number | null; message: string }) => void,
   signal?: AbortSignal,
   profile?: string | undefined,
-): Promise<Record<string, any>> {
+): Promise<Record<string, ProductAttributes & { pricePerHour: number }>> {
   console.log(`Starting to fetch ${serviceCode} instance data for region: ${region}`);
   const { awsProfile } = getPreferenceValues<Preferences>();
   const profileToUse = profile || awsProfile;
   const client = createPricingClient(profileToUse);
-  const instanceData: Record<string, any> = {};
+  const instanceData: Record<string, ProductAttributes & { pricePerHour: number }> = {};
   let pageCount = 0;
   let instanceCount = 0;
 
@@ -128,22 +155,21 @@ export async function fetchInstanceData(
 
     if (page.PriceList) {
       for (const priceItem of page.PriceList) {
-        const priceJSON = JSON.parse(priceItem.toString());
+        const priceJSON = JSON.parse(priceItem.toString()) as PriceData;
         const product = priceJSON.product;
         const attributes = product.attributes;
         const instanceType = attributes.instanceType;
-        const usageType = attributes.usagetype; // Add this line
+        const usageType = attributes.usagetype;
 
         if (!instanceType) continue;
 
         const onDemandTerms = priceJSON.terms?.OnDemand;
         if (onDemandTerms) {
-          const term = Object.values(onDemandTerms)[0] as any;
+          const term = Object.values(onDemandTerms)[0];
           const priceDimensions = term.priceDimensions;
-          const priceDimension = Object.values(priceDimensions)[0] as any;
+          const priceDimension = Object.values(priceDimensions)[0];
           const pricePerUnit = parseFloat(priceDimension.pricePerUnit.USD);
 
-          // Use a combination of instanceType and usageType as the key
           const key = `${instanceType}|${usageType}`;
           instanceData[key] = {
             pricePerHour: pricePerUnit,
