@@ -72,7 +72,7 @@ export function useAWSInstanceData<T>({
             abortControllerRef.current.signal,
           );
           const processedData = dataProcessor ? dataProcessor(rawData) : rawData;
-          setInstanceData(processedData);
+          setInstanceData(processedData as Record<string, T>);
           setLoadingStatus("Populating cache...");
           await setCachedData(cacheKeyWithRegion, 1, processedData);
         }

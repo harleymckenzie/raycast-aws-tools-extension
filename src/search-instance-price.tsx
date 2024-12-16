@@ -162,23 +162,22 @@ function InstanceDetailsComponent({ details, region, service }: InstanceDetailsP
 
   const currentInstanceData = useMemo(() => {
     if (!instanceData) return null;
-    
+
     // Find instance that matches both type and I/O optimisation status
     const matchingInstance = Object.entries(instanceData).find(([key, data]) => {
-      const [instanceTypeKey] = key.split('|');
-      const isIOOptimized = data.usagetype?.includes('IOOptimized');
-      
+      const [instanceTypeKey] = key.split("|");
+      const isIOOptimized = data.usagetype?.includes("IOOptimized");
+
       // For RDS, check I/O optimisation status
-      if (selectedService.startsWith('RDS')) {
-        const currentIsIOOptimized = details.usagetype?.includes('IOOptimized');
-        return instanceTypeKey === instanceType && 
-               isIOOptimized === currentIsIOOptimized;
+      if (selectedService.startsWith("RDS")) {
+        const currentIsIOOptimized = details.usagetype?.includes("IOOptimized");
+        return instanceTypeKey === instanceType && isIOOptimized === currentIsIOOptimized;
       }
-      
+
       // For other services, just match instance type
       return instanceTypeKey === instanceType;
     });
-    
+
     return matchingInstance ? matchingInstance[1] : null;
   }, [instanceData, instanceType, selectedService, details.usagetype]);
 

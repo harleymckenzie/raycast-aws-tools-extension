@@ -100,7 +100,7 @@ interface OnDemandTerm {
 interface ProductAttributes {
   instanceType: string;
   usagetype: string;
-  [key: string]: string;
+  [key: string]: string | number;
 }
 
 interface PriceProduct {

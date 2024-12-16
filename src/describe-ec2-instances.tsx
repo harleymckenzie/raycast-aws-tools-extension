@@ -1,3 +1,4 @@
+/* eslint-disable @raycast/prefer-title-case */
 import { useState, useEffect } from "react";
 import { Color, Icon, List, ActionPanel, Action, getPreferenceValues } from "@raycast/api";
 import { DescribeInstancesCommand, Instance } from "@aws-sdk/client-ec2";
@@ -102,13 +103,15 @@ export default function Command() {
             <ActionPanel title="EC2 Actions">
               <Action.Push title="View Details" target={<InstanceDetailsComponent instance={instance} />} />
               <Action.OpenInBrowser title="Open in Browser" url={consoleUrl + instance.InstanceId} />
-              {/* eslint-disable-next-line @raycast/prefer-title-case */}
               <Action.CopyToClipboard title="Copy Public IP" content={instance.PublicIpAddress ?? ""} />
-              {/* eslint-disable-next-line @raycast/prefer-title-case */}
-              <Action.Paste title="Paste SSH Command" content={instance.PublicIpAddress ? `ssh ${instance.PublicIpAddress}` : ""} />
-              {/* eslint-disable-next-line @raycast/prefer-title-case */}
-              <Action.CopyToClipboard title="Copy SSH Command" content={instance.PublicIpAddress ? `ssh ${instance.PublicIpAddress}` : ""} />
-              {/* eslint-disable-next-line @raycast/prefer-title-case */}
+              <Action.Paste
+                title="Paste SSH Command"
+                content={instance.PublicIpAddress ? `ssh ${instance.PublicIpAddress}` : ""}
+              />
+              <Action.CopyToClipboard
+                title="Copy SSH Command"
+                content={instance.PublicIpAddress ? `ssh ${instance.PublicIpAddress}` : ""}
+              />
               <Action.CopyToClipboard title="Copy Instance ID" content={instance.InstanceId ?? ""} />
             </ActionPanel>
           }
