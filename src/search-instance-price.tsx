@@ -1,8 +1,10 @@
-import { List, LaunchProps, getPreferenceValues, Icon, ActionPanel, Action } from "@raycast/api";
-import { useState, useMemo, useEffect } from "react";
+import { List, LaunchProps, getPreferenceValues, Icon, ActionPanel, Action, Detail } from "@raycast/api";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { ServiceCode } from "./shared/awsClient";
 import { useAWSInstanceData, useBaselineBandwidth } from "./shared/hooks";
 import { getNetworkThroughput } from "./shared/utils";
+import React from "react";
+import { Clipboard, showToast, Toast } from "@raycast/api";
 
 interface Preferences {
   defaultRegion: string;
@@ -141,6 +143,7 @@ const getInstancePrefix = (service: ServiceType): string => {
 function InstanceDetailsComponent({ details, region, service }: InstanceDetailsProps) {
   const [selectedService, setSelectedService] = useState<ServiceType>(service);
   const [instanceType, setInstanceType] = useState(details.instanceType);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const serviceConfig = SERVICE_CONFIGS[selectedService];
   const filters = [{ Type: "TERM_MATCH", Field: "regionCode", Value: region }, ...serviceConfig.additionalFilters];
@@ -150,8 +153,36 @@ function InstanceDetailsComponent({ details, region, service }: InstanceDetailsP
     serviceCode: serviceConfig.serviceCode,
     cacheKey: serviceConfig.cacheKey,
     filters,
-    dependencies: [selectedService],
+    dependencies: [selectedService, refreshKey],
   });
+
+  // Log pricing info when menu is opened or refreshed
+  useEffect(() => {
+    if (instanceData) {
+      const matchingInstance = Object.entries(instanceData).find(([key, data]) => {
+        const [instanceTypeKey] = key.split("|");
+        const isIOOptimized = data.usagetype?.includes("IOOptimized");
+        if (selectedService.startsWith("RDS")) {
+          const currentIsIOOptimized = details.usagetype?.includes("IOOptimized");
+          return instanceTypeKey === instanceType && isIOOptimized === currentIsIOOptimized;
+        }
+        return instanceTypeKey === instanceType;
+      });
+      if (matchingInstance) {
+        const [key, data] = matchingInstance;
+        // eslint-disable-next-line no-console
+        console.log("[Pricing Info]", {
+          key,
+          pricePerHour: data.pricePerHour,
+          usagetype: data.usagetype,
+          allAttributes: data,
+        });
+      } else {
+        // eslint-disable-next-line no-console
+        console.log(`[Pricing Info] No matching instance for type: ${instanceType}`);
+      }
+    }
+  }, [instanceData, instanceType, selectedService, details.usagetype, refreshKey]);
 
   // Update instance type when service changes
   useEffect(() => {
@@ -159,6 +190,12 @@ function InstanceDetailsComponent({ details, region, service }: InstanceDetailsP
     const newPrefix = getInstancePrefix(selectedService);
     setInstanceType(`${newPrefix}${baseInstanceType}`);
   }, [selectedService]);
+
+  // Get all available instance types for dropdown
+  const availableInstanceTypes = useMemo(() => {
+    if (!instanceData) return [];
+    return Array.from(new Set(Object.keys(instanceData).map((key) => key.split("|")[0]))).sort();
+  }, [instanceData]);
 
   const currentInstanceData = useMemo(() => {
     if (!instanceData) return null;
@@ -193,48 +230,59 @@ function InstanceDetailsComponent({ details, region, service }: InstanceDetailsP
       isLoading={isLoading}
       navigationTitle={`Details for ${instanceType}`}
       searchBarAccessory={
-        <List.Dropdown
-          tooltip="Select AWS Service"
-          value={selectedService}
-          onChange={(newValue) => setSelectedService(newValue as ServiceType)}
-        >
-          <List.Dropdown.Section title="EC2">
-            {Object.keys(SERVICE_CONFIGS)
-              .filter((service) => service === "EC2")
-              .map((service) => (
-                <List.Dropdown.Item
-                  key={service}
-                  title={service}
-                  value={service}
-                  icon={{ source: SERVICE_CONFIGS[service as ServiceType].icon }}
-                />
-              ))}
-          </List.Dropdown.Section>
-          <List.Dropdown.Section title="RDS">
-            {Object.keys(SERVICE_CONFIGS)
-              .filter((service) => service.startsWith("RDS"))
-              .map((service) => (
-                <List.Dropdown.Item
-                  key={service}
-                  title={service}
-                  value={service}
-                  icon={{ source: SERVICE_CONFIGS[service as ServiceType].icon }}
-                />
-              ))}
-          </List.Dropdown.Section>
-          <List.Dropdown.Section title="Elasticache">
-            {Object.keys(SERVICE_CONFIGS)
-              .filter((service) => service.startsWith("Elasticache"))
-              .map((service) => (
-                <List.Dropdown.Item
-                  key={service}
-                  title={service}
-                  value={service}
-                  icon={{ source: SERVICE_CONFIGS[service as ServiceType].icon }}
-                />
-              ))}
-          </List.Dropdown.Section>
-        </List.Dropdown>
+        <>
+          <List.Dropdown
+            tooltip="Select AWS Service"
+            value={selectedService}
+            onChange={(newValue) => setSelectedService(newValue as ServiceType)}
+          >
+            <List.Dropdown.Section title="EC2">
+              {Object.keys(SERVICE_CONFIGS)
+                .filter((service) => service === "EC2")
+                .map((service) => (
+                  <List.Dropdown.Item
+                    key={service}
+                    title={service}
+                    value={service}
+                    icon={{ source: SERVICE_CONFIGS[service as ServiceType].icon }}
+                  />
+                ))}
+            </List.Dropdown.Section>
+            <List.Dropdown.Section title="RDS">
+              {Object.keys(SERVICE_CONFIGS)
+                .filter((service) => service.startsWith("RDS"))
+                .map((service) => (
+                  <List.Dropdown.Item
+                    key={service}
+                    title={service}
+                    value={service}
+                    icon={{ source: SERVICE_CONFIGS[service as ServiceType].icon }}
+                  />
+                ))}
+            </List.Dropdown.Section>
+            <List.Dropdown.Section title="Elasticache">
+              {Object.keys(SERVICE_CONFIGS)
+                .filter((service) => service.startsWith("Elasticache"))
+                .map((service) => (
+                  <List.Dropdown.Item
+                    key={service}
+                    title={service}
+                    value={service}
+                    icon={{ source: SERVICE_CONFIGS[service as ServiceType].icon }}
+                  />
+                ))}
+            </List.Dropdown.Section>
+          </List.Dropdown>
+          <List.Dropdown
+            tooltip="Select Instance Type"
+            value={instanceType}
+            onChange={(newValue) => setInstanceType(newValue)}
+          >
+            {availableInstanceTypes.map((type) => (
+              <List.Dropdown.Item key={type} title={type} value={type} />
+            ))}
+          </List.Dropdown>
+        </>
       }
     >
       <List.Section title="Instance Details">
@@ -287,6 +335,15 @@ function InstanceDetailsComponent({ details, region, service }: InstanceDetailsP
               { text: `$${((currentInstanceData.pricePerHour ?? 0) * 24).toFixed(2)}/day` },
               { text: `$${((currentInstanceData.pricePerHour ?? 0) * 730).toFixed(2)}/mo` },
             ]}
+            actions={
+              <ActionPanel>
+                <Action
+                  title="Refresh Pricing"
+                  icon={Icon.RotateClockwise}
+                  onAction={() => setRefreshKey((k) => k + 1)}
+                />
+              </ActionPanel>
+            }
           />
         )}
       </List.Section>
@@ -301,6 +358,13 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
   const [selectedService, setSelectedService] = useState<ServiceType>(
     (props.arguments.service as ServiceType) || "EC2",
   );
+  const [compareSet, setCompareSet] = useState<string[]>([]);
+  const [showCompare, setShowCompare] = useState(false);
+
+  // Clear search text when opening comparison modal
+  useEffect(() => {
+    if (showCompare && searchText !== "") setSearchText("");
+  }, [showCompare]);
 
   const baseFilters = [{ Type: "TERM_MATCH", Field: "regionCode", Value: region }];
 
@@ -341,12 +405,76 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
       });
   }, [instanceData, searchText]);
 
+  // Add/remove from compare set
+  const toggleCompare = useCallback((key: string) => {
+    setCompareSet((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  }, []);
+
   const getInstanceTitle = (instanceType: string, info: InstanceDetails) => {
     if (selectedService.startsWith("RDS") && info.usagetype?.includes("IOOptimized")) {
       return `${instanceType} (I/O-Optimized)`;
     }
     return instanceType;
   };
+
+  // Comparison modal component
+  function CompareModal({ onClose }: { onClose: () => void }) {
+    if (!instanceData) return null;
+    const compared = compareSet
+      .map((key) => {
+        const data = instanceData[key];
+        return data ? ({ key, ...data } as InstanceDetails & { key: string }) : undefined;
+      })
+      .filter((item): item is InstanceDetails & { key: string } => item !== undefined);
+    if (compared.length < 2) return null;
+    // Attributes to compare
+    const fields = [
+      { label: "vCPU", key: "vcpu" },
+      { label: "Memory", key: "memory" },
+      { label: "Price/hr", key: "pricePerHour", render: (v: unknown) => v != null ? `$${Number(v).toFixed(4)}` : "N/A" },
+      { label: "Price/day", key: "pricePerHour", render: (v: unknown) => v != null ? `$${(Number(v) * 24).toFixed(2)}` : "N/A" },
+      { label: "Price/mo", key: "pricePerHour", render: (v: unknown) => v != null ? `$${(Number(v) * 730).toFixed(2)}` : "N/A" },
+      { label: "Network", key: "networkPerformance" },
+    ];
+    // Build markdown table
+    const headers = ["Attribute", ...compared.map((item) => `**${String(item.instanceType)}**`)];
+    const rows = fields.map((field) => {
+      const values = compared.map((item) => {
+        const value = item[field.key as keyof typeof item];
+        return field.render ? field.render(value) : String(value ?? "N/A");
+      });
+      return `| **${field.label}** | ${values.join(" | ")} |`;
+    });
+    const headerRow = `| ${headers.map(h => `**${h}**`).join(" | ")} |`;
+    const separatorRow = `|${headers.map(() => ":---:").join("|")}|`;
+    const markdown = [
+      "# Comparison Table",
+      "",
+      headerRow,
+      separatorRow,
+      ...rows,
+    ].join("\n");
+    return (
+      <Detail
+        markdown={markdown}
+        navigationTitle="Compare Instances"
+        actions={
+          <ActionPanel>
+            <Action
+              title="Copy Table (Markdown)"
+              onAction={async () => {
+                await Clipboard.copy(markdown);
+                showToast({ style: Toast.Style.Success, title: "Copied table to clipboard" });
+              }}
+            />
+            <Action title="Close Comparison" onAction={onClose} />
+          </ActionPanel>
+        }
+      />
+    );
+  }
 
   if (error) {
     return (
@@ -366,6 +494,10 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
         />
       </List>
     );
+  }
+
+  if (showCompare) {
+    return <CompareModal onClose={() => setShowCompare(false)} />;
   }
 
   return (
@@ -426,9 +558,10 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
           subtitle={`${info.vcpu} vCPU | ${info.memory} RAM`}
           icon={Icon.MemoryChip}
           accessories={[
-            {
-              text: info.pricePerHour !== null ? `$${info.pricePerHour.toFixed(4)}/hr` : "Price N/A",
-            },
+            { text: info.pricePerHour !== null ? `$${info.pricePerHour.toFixed(4)}/hr` : "Price N/A" },
+            ...(compareSet.includes(key)
+              ? [{ icon: Icon.CheckCircle, tooltip: "In Comparison" }]
+              : []),
           ]}
           actions={
             <ActionPanel>
@@ -436,10 +569,31 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
                 title="View Details"
                 target={<InstanceDetailsComponent details={info} region={region} service={selectedService} />}
               />
+              <Action
+                title={compareSet.includes(key) ? "Remove from Compare" : "Add to Compare"}
+                icon={compareSet.includes(key) ? Icon.MinusCircle : Icon.PlusCircle}
+                onAction={() => toggleCompare(key)}
+              />
             </ActionPanel>
           }
         />
       ))}
+      {compareSet.length >= 2 && (
+        <List.Item
+          key="compare-action"
+          title="Compare Selected Instances"
+          icon={Icon.Sidebar}
+          actions={
+            <ActionPanel>
+              <Action
+                title="Compare Selected"
+                icon={Icon.Sidebar}
+                onAction={() => setShowCompare(true)}
+              />
+            </ActionPanel>
+          }
+        />
+      )}
     </List>
   );
 }

@@ -38,7 +38,6 @@ export function useAWSInstanceData<T>({
   dataProcessor,
 }: AWSInstanceDataOptions<T>): AWSInstanceDataResult<T> {
   console.log(`Fetching ${serviceCode} instance data for region: ${region}`);
-  console.log("Filters:", JSON.stringify(filters, null, 2));
   const [instanceData, setInstanceData] = useState<Record<string, T>>({});
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
