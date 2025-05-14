@@ -1,5 +1,5 @@
-import { List, LaunchProps, getPreferenceValues, Icon, ActionPanel, Action, Detail } from "@raycast/api";
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { Action, ActionPanel, Detail, getPreferenceValues, Icon, LaunchProps, List } from "@raycast/api";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ServiceCode } from "./shared/awsClient";
 import { useAWSInstanceData, useBaselineBandwidth } from "./shared/hooks";
 import { getNetworkThroughput } from "./shared/utils";
@@ -53,7 +53,13 @@ const SERVICE_CONFIGS = {
     serviceCode: ServiceCode.ELASTICACHE,
     cacheKey: "elasticache_redis_instance_data",
     icon: "Elasticache.png",
-    additionalFilters: [{ Type: "TERM_MATCH", Field: "cacheEngine", Value: "Redis" }],
+    additionalFilters: [
+      {
+        Type: "TERM_MATCH",
+        Field: "cacheEngine",
+        Value: "Redis",
+      },
+    ],
   },
   "RDS (Aurora MySQL)": {
     serviceCode: ServiceCode.RDS,
@@ -69,7 +75,11 @@ const SERVICE_CONFIGS = {
     cacheKey: "rds_aurora_postgresql_data",
     icon: "RDS.png",
     additionalFilters: [
-      { Type: "TERM_MATCH", Field: "databaseEngine", Value: "Aurora PostgreSQL" },
+      {
+        Type: "TERM_MATCH",
+        Field: "databaseEngine",
+        Value: "Aurora PostgreSQL",
+      },
       { Type: "TERM_MATCH", Field: "deploymentOption", Value: "Single-AZ" },
     ],
   },
@@ -244,7 +254,9 @@ function InstanceDetailsComponent({ details, region, service }: InstanceDetailsP
                     key={service}
                     title={service}
                     value={service}
-                    icon={{ source: SERVICE_CONFIGS[service as ServiceType].icon }}
+                    icon={{
+                      source: SERVICE_CONFIGS[service as ServiceType].icon,
+                    }}
                   />
                 ))}
             </List.Dropdown.Section>
@@ -256,7 +268,9 @@ function InstanceDetailsComponent({ details, region, service }: InstanceDetailsP
                     key={service}
                     title={service}
                     value={service}
-                    icon={{ source: SERVICE_CONFIGS[service as ServiceType].icon }}
+                    icon={{
+                      source: SERVICE_CONFIGS[service as ServiceType].icon,
+                    }}
                   />
                 ))}
             </List.Dropdown.Section>
@@ -268,7 +282,9 @@ function InstanceDetailsComponent({ details, region, service }: InstanceDetailsP
                     key={service}
                     title={service}
                     value={service}
-                    icon={{ source: SERVICE_CONFIGS[service as ServiceType].icon }}
+                    icon={{
+                      source: SERVICE_CONFIGS[service as ServiceType].icon,
+                    }}
                   />
                 ))}
             </List.Dropdown.Section>
@@ -331,9 +347,15 @@ function InstanceDetailsComponent({ details, region, service }: InstanceDetailsP
             icon={Icon.BankNote}
             title="Pricing"
             accessories={[
-              { text: `$${currentInstanceData.pricePerHour?.toFixed(4) ?? "0.0000"}/hr` },
-              { text: `$${((currentInstanceData.pricePerHour ?? 0) * 24).toFixed(2)}/day` },
-              { text: `$${((currentInstanceData.pricePerHour ?? 0) * 730).toFixed(2)}/mo` },
+              {
+                text: `$${currentInstanceData.pricePerHour?.toFixed(4) ?? "0.0000"}/hr`,
+              },
+              {
+                text: `$${((currentInstanceData.pricePerHour ?? 0) * 24).toFixed(2)}/day`,
+              },
+              {
+                text: `$${((currentInstanceData.pricePerHour ?? 0) * 730).toFixed(2)}/mo`,
+              },
             ]}
             actions={
               <ActionPanel>
@@ -366,7 +388,13 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
     if (showCompare && searchText !== "") setSearchText("");
   }, [showCompare]);
 
-  const baseFilters = [{ Type: "TERM_MATCH", Field: "regionCode", Value: region }];
+  const baseFilters = [
+    {
+      Type: "TERM_MATCH",
+      Field: "regionCode",
+      Value: region,
+    },
+  ];
 
   const serviceConfig = SERVICE_CONFIGS[selectedService];
   const filters = [...baseFilters, ...serviceConfig.additionalFilters];
@@ -407,9 +435,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
 
   // Add/remove from compare set
   const toggleCompare = useCallback((key: string) => {
-    setCompareSet((prev) =>
-      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
-    );
+    setCompareSet((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
   }, []);
 
   const getInstanceTitle = (instanceType: string, info: InstanceDetails) => {
@@ -434,9 +460,21 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
     const fields = [
       { label: "vCPU", key: "vcpu" },
       { label: "Memory", key: "memory" },
-      { label: "Price/hr", key: "pricePerHour", render: (v: unknown) => v != null ? `$${Number(v).toFixed(4)}` : "N/A" },
-      { label: "Price/day", key: "pricePerHour", render: (v: unknown) => v != null ? `$${(Number(v) * 24).toFixed(2)}` : "N/A" },
-      { label: "Price/mo", key: "pricePerHour", render: (v: unknown) => v != null ? `$${(Number(v) * 730).toFixed(2)}` : "N/A" },
+      {
+        label: "Price/hr",
+        key: "pricePerHour",
+        render: (v: unknown) => (v != null ? `$${Number(v).toFixed(4)}` : "N/A"),
+      },
+      {
+        label: "Price/day",
+        key: "pricePerHour",
+        render: (v: unknown) => (v != null ? `$${(Number(v) * 24).toFixed(2)}` : "N/A"),
+      },
+      {
+        label: "Price/mo",
+        key: "pricePerHour",
+        render: (v: unknown) => (v != null ? `$${(Number(v) * 730).toFixed(2)}` : "N/A"),
+      },
       { label: "Network", key: "networkPerformance" },
     ];
     const headers = ["Attribute", ...compared.map((item) => `**${String(item.instanceType)}**`)];
@@ -447,15 +485,9 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
       });
       return `| **${field.label}** | ${values.join(" | ")} |`;
     });
-    const headerRow = `| ${headers.map(h => `**${h}**`).join(" | ")} |`;
+    const headerRow = `| ${headers.map((h) => `**${h}**`).join(" | ")} |`;
     const separatorRow = `|${headers.map(() => ":---:").join("|")}|`;
-    const markdown = [
-      "**Comparison Table**",
-      "",
-      headerRow,
-      separatorRow,
-      ...rows,
-    ].join("\n");
+    const markdown = ["**Comparison Table**", "", headerRow, separatorRow, ...rows].join("\n");
     return (
       <Detail
         markdown={markdown}
@@ -463,10 +495,13 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
         actions={
           <ActionPanel>
             <Action
-              title="Copy Table (Markdown)"
+              title="Copy Table (markdown)"
               onAction={async () => {
                 await Clipboard.copy(markdown);
-                showToast({ style: Toast.Style.Success, title: "Copied table to clipboard" });
+                showToast({
+                  style: Toast.Style.Success,
+                  title: "Copied table to clipboard",
+                });
               }}
             />
             <Action title="Close Comparison" onAction={() => setShowCompare(false)} />
@@ -516,7 +551,9 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
                   key={service}
                   title={service}
                   value={service}
-                  icon={{ source: SERVICE_CONFIGS[service as ServiceType].icon }}
+                  icon={{
+                    source: SERVICE_CONFIGS[service as ServiceType].icon,
+                  }}
                 />
               ))}
           </List.Dropdown.Section>
@@ -528,7 +565,9 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
                   key={service}
                   title={service}
                   value={service}
-                  icon={{ source: SERVICE_CONFIGS[service as ServiceType].icon }}
+                  icon={{
+                    source: SERVICE_CONFIGS[service as ServiceType].icon,
+                  }}
                 />
               ))}
           </List.Dropdown.Section>
@@ -540,7 +579,9 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
                   key={service}
                   title={service}
                   value={service}
-                  icon={{ source: SERVICE_CONFIGS[service as ServiceType].icon }}
+                  icon={{
+                    source: SERVICE_CONFIGS[service as ServiceType].icon,
+                  }}
                 />
               ))}
           </List.Dropdown.Section>
@@ -554,10 +595,10 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
           subtitle={`${info.vcpu} vCPU | ${info.memory} RAM`}
           icon={Icon.MemoryChip}
           accessories={[
-            { text: info.pricePerHour !== null ? `$${info.pricePerHour.toFixed(4)}/hr` : "Price N/A" },
-            ...(compareSet.includes(key)
-              ? [{ icon: Icon.CheckCircle, tooltip: "In Comparison" }]
-              : []),
+            {
+              text: info.pricePerHour !== null ? `$${info.pricePerHour.toFixed(4)}/hr` : "Price N/A",
+            },
+            ...(compareSet.includes(key) ? [{ icon: Icon.CheckCircle, tooltip: "In Comparison" }] : []),
           ]}
           actions={
             <ActionPanel>
@@ -581,11 +622,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
           icon={Icon.Sidebar}
           actions={
             <ActionPanel>
-              <Action
-                title="Compare Selected"
-                icon={Icon.Sidebar}
-                onAction={() => setShowCompare(true)}
-              />
+              <Action title="Compare Selected" icon={Icon.Sidebar} onAction={() => setShowCompare(true)} />
             </ActionPanel>
           }
         />
