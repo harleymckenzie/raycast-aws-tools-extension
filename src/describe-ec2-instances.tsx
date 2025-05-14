@@ -1,34 +1,41 @@
 /* eslint-disable @raycast/prefer-title-case */
 import { useState, useEffect } from "react";
-import { Color, Icon, List, ActionPanel, Action, getPreferenceValues } from "@raycast/api";
+import { Color, Icon, List, ActionPanel, Action, getPreferenceValues, LaunchProps } from "@raycast/api";
 import { DescribeInstancesCommand, Instance } from "@aws-sdk/client-ec2";
 import { createEC2Client } from "./shared/awsClient";
-import { useAwsProfileDropdown, useProfileOptions } from "./shared/awsProfileSelection";
 
 interface Preferences {
   awsProfile: string;
   defaultRegion: string;
 }
 
-export default function Command() {
+interface CommandArguments {
+  profile?: string;
+}
+
+type AwsService = "EC2" | "RDS";
+
+export default function ListAWSResourcesCommand(props: LaunchProps<{ arguments: CommandArguments }>) {
   const { awsProfile, defaultRegion } = getPreferenceValues<Preferences>();
-  const [region, setRegion] = useState(defaultRegion);
-  const profileOptions = useProfileOptions();
+  const profile = props.arguments.profile || awsProfile;
+  const region = defaultRegion;
 
-  const { selectedProfile, dropdown } = useAwsProfileDropdown(awsProfile, (newProfile: string) => {
-    const newRegion = profileOptions.find((p) => p.name === newProfile)?.region || defaultRegion;
-    setRegion(newRegion);
-  });
-
-  const [instances, setInstances] = useState<Instance[]>([]);
+  const [selectedService, setSelectedService] = useState<AwsService>("EC2");
+  const [resources, setResources] = useState<Instance[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const fetchInstances = async () => {
       setIsLoading(true);
       try {
-        const data = await describeEC2Instances(selectedProfile, region);
-        setInstances(data ?? []);
+        let data: Instance[] = [];
+        if (selectedService === "EC2") {
+          data = await listEC2Instances(profile, region);
+        } else if (selectedService === "RDS") {
+          // Placeholder: Add RDS resource listing here
+          data = [];
+        }
+        setResources(data ?? []);
       } catch (error) {
         console.error("Error fetching instances:", error);
       } finally {
@@ -37,20 +44,34 @@ export default function Command() {
     };
 
     fetchInstances();
-  }, [selectedProfile, region]);
+  }, [profile, region, selectedService]);
 
   const consoleUrl = `https://${region}.console.aws.amazon.com/ec2/home?region=${region}#InstanceDetails:instanceId=`;
 
   return (
-    <List isLoading={isLoading} searchBarAccessory={dropdown} isShowingDetail>
-      {instances?.map((instance) => (
+    <List
+      isLoading={isLoading}
+      isShowingDetail
+      searchBarPlaceholder="Search AWS Resources..."
+      searchBarAccessory={
+        <List.Dropdown
+          tooltip="Select AWS Service"
+          value={selectedService}
+          onChange={(newValue) => setSelectedService(newValue as AwsService)}
+        >
+          <List.Dropdown.Item title="EC2" value="EC2" />
+          <List.Dropdown.Item title="RDS" value="RDS" />
+        </List.Dropdown>
+      }
+    >
+      {resources?.map((resource) => (
         <List.Item
-          key={instance?.InstanceId}
-          title={instance?.Tags?.find((tag) => tag.Key === "Name")?.Value ?? instance?.InstanceId ?? ""}
-          icon={{ source: Icon.Dot, tintColor: instance?.State?.Name === "running" ? Color.Green : Color.Red }}
+          key={resource?.InstanceId}
+          title={resource?.Tags?.find((tag) => tag.Key === "Name")?.Value ?? resource?.InstanceId ?? ""}
+          icon={{ source: Icon.Dot, tintColor: resource?.State?.Name === "running" ? Color.Green : Color.Red }}
           accessories={[
             {
-              text: instance?.InstanceId,
+              text: resource?.InstanceId,
             },
           ]}
           detail={
@@ -59,35 +80,35 @@ export default function Command() {
                 <List.Item.Detail.Metadata>
                   <List.Item.Detail.Metadata.Label
                     title="Name"
-                    text={instance?.Tags?.find((tag) => tag.Key === "Name")?.Value ?? ""}
+                    text={resource?.Tags?.find((tag) => tag.Key === "Name")?.Value ?? ""}
                   />
-                  <List.Item.Detail.Metadata.Label title="Instance ID" text={instance?.InstanceId ?? ""} />
-                  <List.Item.Detail.Metadata.Label title="Instance Type" text={instance?.InstanceType ?? ""} />
+                  <List.Item.Detail.Metadata.Label title="Resource ID" text={resource?.InstanceId ?? ""} />
+                  <List.Item.Detail.Metadata.Label title="Resource Type" text={resource?.InstanceType ?? ""} />
                   <List.Item.Detail.Metadata.Label
                     icon={{
                       source: Icon.Dot,
-                      tintColor: instance?.State?.Name === "running" ? Color.Green : Color.Red,
+                      tintColor: resource?.State?.Name === "running" ? Color.Green : Color.Red,
                     }}
                     title="State"
-                    text={instance?.State?.Name ?? ""}
+                    text={resource?.State?.Name ?? ""}
                   />
-                  <List.Item.Detail.Metadata.Label title="AMI ID" text={instance?.ImageId ?? ""} />
-                  <List.Item.Detail.Metadata.Label title="Instance Key Name" text={instance?.KeyName ?? ""} />
+                  <List.Item.Detail.Metadata.Label title="AMI ID" text={resource?.ImageId ?? ""} />
+                  <List.Item.Detail.Metadata.Label title="Key Name" text={resource?.KeyName ?? ""} />
                   <List.Item.Detail.Metadata.Label
                     title="Launch Time"
-                    text={instance?.LaunchTime?.toISOString() ?? ""}
+                    text={resource?.LaunchTime?.toISOString() ?? ""}
                   />
                   <List.Item.Detail.Metadata.Separator />
-                  <List.Item.Detail.Metadata.Label title="Private IP Address" text={instance?.PrivateIpAddress ?? ""} />
-                  <List.Item.Detail.Metadata.Label title="Public IP Address" text={instance?.PublicIpAddress ?? ""} />
-                  <List.Item.Detail.Metadata.Label title="VPC ID" text={instance?.VpcId ?? ""} />
+                  <List.Item.Detail.Metadata.Label title="Private IP Address" text={resource?.PrivateIpAddress ?? ""} />
+                  <List.Item.Detail.Metadata.Label title="Public IP Address" text={resource?.PublicIpAddress ?? ""} />
+                  <List.Item.Detail.Metadata.Label title="VPC ID" text={resource?.VpcId ?? ""} />
                   <List.Item.Detail.Metadata.Label
                     title="Availability Zone"
-                    text={instance?.Placement?.AvailabilityZone ?? ""}
+                    text={resource?.Placement?.AvailabilityZone ?? ""}
                   />
-                  <List.Item.Detail.Metadata.Label title="Instance Subnet ID" text={instance?.SubnetId ?? ""} />
-                  <List.Item.Detail.Metadata.TagList title="Instance Tags">
-                    {instance?.Tags?.map((tag) => (
+                  <List.Item.Detail.Metadata.Label title="Subnet ID" text={resource?.SubnetId ?? ""} />
+                  <List.Item.Detail.Metadata.TagList title="Tags">
+                    {resource?.Tags?.map((tag) => (
                       <List.Item.Detail.Metadata.TagList.Item
                         key={tag.Key}
                         text={`${tag.Key}: ${tag.Value}`}
@@ -100,19 +121,19 @@ export default function Command() {
             />
           }
           actions={
-            <ActionPanel title="EC2 Actions">
-              <Action.Push title="View Details" target={<InstanceDetailsComponent instance={instance} />} />
-              <Action.OpenInBrowser title="Open in Browser" url={consoleUrl + instance.InstanceId} />
-              <Action.CopyToClipboard title="Copy Public IP" content={instance.PublicIpAddress ?? ""} />
+            <ActionPanel title="Resource Actions">
+              <Action.Push title="View Details" target={<ResourceDetailsComponent resource={resource} />} />
+              <Action.OpenInBrowser title="Open in Browser" url={consoleUrl + resource.InstanceId} />
+              <Action.CopyToClipboard title="Copy Public IP" content={resource.PublicIpAddress ?? ""} />
               <Action.Paste
                 title="Paste SSH Command"
-                content={instance.PublicIpAddress ? `ssh ${instance.PublicIpAddress}` : ""}
+                content={resource.PublicIpAddress ? `ssh ${resource.PublicIpAddress}` : ""}
               />
               <Action.CopyToClipboard
                 title="Copy SSH Command"
-                content={instance.PublicIpAddress ? `ssh ${instance.PublicIpAddress}` : ""}
+                content={resource.PublicIpAddress ? `ssh ${resource.PublicIpAddress}` : ""}
               />
-              <Action.CopyToClipboard title="Copy Instance ID" content={instance.InstanceId ?? ""} />
+              <Action.CopyToClipboard title="Copy Resource ID" content={resource.InstanceId ?? ""} />
             </ActionPanel>
           }
         />
@@ -121,36 +142,36 @@ export default function Command() {
   );
 }
 
-interface InstanceDetailsProps {
-  instance: Instance;
+interface ResourceDetailsProps {
+  resource: Instance;
 }
 
-function InstanceDetailsComponent({ instance }: InstanceDetailsProps) {
+function ResourceDetailsComponent({ resource }: ResourceDetailsProps) {
   return (
-    <List navigationTitle="Instance Details">
-      <List.Section title="Instance Details">
+    <List navigationTitle="Resource Details">
+      <List.Section title="Resource Details">
         <List.Item
           title="Name"
-          accessories={[{ text: instance?.Tags?.find((tag) => tag.Key === "Name")?.Value ?? "N/A" }]}
+          accessories={[{ text: resource?.Tags?.find((tag) => tag.Key === "Name")?.Value ?? "N/A" }]}
         />
-        <List.Item title="Instance ID" accessories={[{ text: instance?.InstanceId ?? "N/A" }]} />
-        <List.Item title="Instance Type" accessories={[{ text: instance?.InstanceType ?? "N/A" }]} />
-        <List.Item title="State" accessories={[{ text: instance?.State?.Name ?? "N/A" }]} />
-        <List.Item title="Public IP" accessories={[{ text: instance?.PublicIpAddress ?? "N/A" }]} />
-        <List.Item title="Private IP" accessories={[{ text: instance?.PrivateIpAddress ?? "N/A" }]} />
-        <List.Item title="VPC ID" accessories={[{ text: instance?.VpcId ?? "N/A" }]} />
-        <List.Item title="Availability Zone" subtitle={instance?.Placement?.AvailabilityZone ?? "N/A"} />
+        <List.Item title="Resource ID" accessories={[{ text: resource?.InstanceId ?? "N/A" }]} />
+        <List.Item title="Resource Type" accessories={[{ text: resource?.InstanceType ?? "N/A" }]} />
+        <List.Item title="State" accessories={[{ text: resource?.State?.Name ?? "N/A" }]} />
+        <List.Item title="Public IP" accessories={[{ text: resource?.PublicIpAddress ?? "N/A" }]} />
+        <List.Item title="Private IP" accessories={[{ text: resource?.PrivateIpAddress ?? "N/A" }]} />
+        <List.Item title="VPC ID" accessories={[{ text: resource?.VpcId ?? "N/A" }]} />
+        <List.Item title="Availability Zone" subtitle={resource?.Placement?.AvailabilityZone ?? "N/A"} />
       </List.Section>
       <List.Section title="Tags">
-        {instance?.Tags?.map((tag) => (
+        {resource?.Tags?.map((tag) => (
           <List.Item key={tag.Key} title={tag.Key ?? "N/A"} subtitle={tag.Value ?? "N/A"} />
-        )) ?? <List.Item title="No tags" subtitle="This instance has no tags" />}
+        )) ?? <List.Item title="No tags" subtitle="This resource has no tags" />}
       </List.Section>
     </List>
   );
 }
 
-export async function describeEC2Instances(profile: string, region: string): Promise<Instance[]> {
+export async function listEC2Instances(profile: string, region: string): Promise<Instance[]> {
   const { awsProfile, defaultRegion } = getPreferenceValues<Preferences>();
   const profileToUse = profile || awsProfile;
   const regionToUse = region || defaultRegion;

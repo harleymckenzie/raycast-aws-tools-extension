@@ -14,11 +14,27 @@
   "license": "MIT",
   "commands": [
     {
-      "name": "describe-ec2-instances",
-      "title": "Describe EC2 Instances",
-      "description": "Lists all EC2 instances.",
+      "name": "list-aws-resources",
+      "title": "List AWS Resources",
+      "description": "List resources from AWS services such as EC2 and RDS.",
       "mode": "view",
       "arguments": [
+        {
+          "name": "service",
+          "type": "dropdown",
+          "data": [
+            {
+              "title": "EC2",
+              "value": "EC2"
+            },
+            {
+              "title": "RDS",
+              "value": "RDS"
+            }
+          ],
+          "placeholder": "AWS Service",
+          "required": false
+        },
         {
           "name": "profile",
           "type": "text",
@@ -32,7 +48,7 @@
           "required": false
         }
       ],
-      "icon": "EC2.png"
+      "icon": "AWS.png"
     },
     {
       "name": "search-instance-price",
@@ -128,7 +144,9 @@
   ],
   "dependencies": {
     "@aws-sdk/client-ec2": "^3.654.0",
+    "@aws-sdk/client-elasticache": "^3.808.0",
     "@aws-sdk/client-pricing": "^3.654.0",
+    "@aws-sdk/client-rds": "^3.808.0",
     "@aws-sdk/credential-providers": "^3.654.0",
     "@aws-sdk/shared-ini-file-loader": "^3.374.0",
     "@raycast/api": "^1.83.1",
