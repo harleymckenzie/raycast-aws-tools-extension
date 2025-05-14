@@ -419,9 +419,11 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
     return instanceType;
   };
 
-  // Comparison modal component
-  function CompareModal({ onClose }: { onClose: () => void }) {
+  if (showCompare) {
+    // Clear search text when opening comparison modal
+    if (searchText !== "") setSearchText("");
     if (!instanceData) return null;
+    // Show the comparison table directly
     const compared = compareSet
       .map((key) => {
         const data = instanceData[key];
@@ -429,7 +431,6 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
       })
       .filter((item): item is InstanceDetails & { key: string } => item !== undefined);
     if (compared.length < 2) return null;
-    // Attributes to compare
     const fields = [
       { label: "vCPU", key: "vcpu" },
       { label: "Memory", key: "memory" },
@@ -438,7 +439,6 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
       { label: "Price/mo", key: "pricePerHour", render: (v: unknown) => v != null ? `$${(Number(v) * 730).toFixed(2)}` : "N/A" },
       { label: "Network", key: "networkPerformance" },
     ];
-    // Build markdown table
     const headers = ["Attribute", ...compared.map((item) => `**${String(item.instanceType)}**`)];
     const rows = fields.map((field) => {
       const values = compared.map((item) => {
@@ -450,7 +450,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
     const headerRow = `| ${headers.map(h => `**${h}**`).join(" | ")} |`;
     const separatorRow = `|${headers.map(() => ":---:").join("|")}|`;
     const markdown = [
-      "# Comparison Table",
+      "**Comparison Table**",
       "",
       headerRow,
       separatorRow,
@@ -469,7 +469,7 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
                 showToast({ style: Toast.Style.Success, title: "Copied table to clipboard" });
               }}
             />
-            <Action title="Close Comparison" onAction={onClose} />
+            <Action title="Close Comparison" onAction={() => setShowCompare(false)} />
           </ActionPanel>
         }
       />
@@ -494,10 +494,6 @@ export default function Command(props: LaunchProps<{ arguments: CommandArguments
         />
       </List>
     );
-  }
-
-  if (showCompare) {
-    return <CompareModal onClose={() => setShowCompare(false)} />;
   }
 
   return (
